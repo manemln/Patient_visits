@@ -1,0 +1,169 @@
+import csv
+
+# ----------------------- DATA STORAGE -----------------------
+class DataStorage:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.records = []
+
+    def load_data(self):
+        """Read the CSV file into memory."""
+        with open(self.filepath, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+
+                # Convert numeric fields
+                row["visit_id"] = int(row["visit_id"])
+                row["patient_id"] = int(row["patient_id"])
+                row["doctor_id"] = int(row["doctor_id"])
+                row["treatment_cost"] = float(row["treatment_cost"])
+                row["number_of_visits"] = int(row["number_of_visits"])
+                row["risk_score"] = float(row["risk_score"])
+                row["outcome_score"] = float(row["outcome_score"])
+
+                self.records.append(row)
+
+        print("Loaded", len(self.records), "records.")
+
+    def get_all(self):
+        return self.records
+
+
+# ----------------------- AVL TREE -----------------------
+class AVLNode:
+    def __init__(self, key, record):
+        self.key = key
+        self.records = [record]  # store duplicates
+        self.left = None
+        self.right = None
+        self.height = 1
+
+
+class AVLTree:
+    def __init__(self):
+        self.root = None
+
+    def height(self, node):
+        return 0 if not node else node.height
+
+    def balance_factor(self, node):
+        return self.height(node.left) - self.height(node.right)
+
+    def rotate_right(self, y):
+        x = y.left
+        t2 = x.right
+
+        x.right = y
+        y.left = t2
+
+        y.height = 1 + max(self.height(y.left), self.height(y.right))
+        x.height = 1 + max(self.height(x.left), self.height(x.right))
+
+        return x
+
+    def rotate_left(self, x):
+        y = x.right
+        t2 = y.left
+
+        y.left = x
+        x.right = t2
+
+        x.height = 1 + max(self.height(x.left), self.height(x.right))
+        y.height = 1 + max(self.height(y.left), self.height(y.right))
+
+        return y
+
+    def insert(self, key, record):
+        self.root = self._insert(self.root, key, record)
+
+    def _insert(self, node, key, record):
+        if not node:
+            return AVLNode(key, record)
+
+        # Insert normally
+        if key < node.key:
+            node.left = self._insert(node.left, key, record)
+        elif key > node.key:
+            node.right = self._insert(node.right, key, record)
+        else:
+            node.records.append(record)
+            return node
+
+        # Update height
+        node.height = 1 + max(self.height(node.left), self.height(node.right))
+
+        # Check balance
+        bf = self.balance_factor(node)
+
+        # Left Left
+        if bf > 1 and key < node.left.key:
+            return self.rotate_right(node)
+
+        # Right Right
+        if bf < -1 and key > node.right.key:
+            return self.rotate_left(node)
+
+        # Left Right
+        if bf > 1 and key > node.left.key:
+            node.left = self.rotate_left(node.left)
+            return self.rotate_right(node)
+
+        # Right Left
+        if bf < -1 and key < node.right.key:
+            node.right = self.rotate_right(node.right)
+            return self.rotate_left(node)
+
+        return node
+
+    def search(self, key):
+        current = self.root
+        while current:
+            if key == current.key:
+                return current.records
+            elif key < current.key:
+                current = current.left
+            else:
+                current = current.right
+        return []
+
+
+# ----------------------- INDEX MANAGER -----------------------
+class IndexManager:
+    def __init__(self):
+        self.index_by_visit = AVLTree()
+        self.index_by_patient = AVLTree()
+        self.index_by_doctor = AVLTree()
+
+    def build(self, records):
+        """Insert all records into AVL indexes."""
+        for r in records:
+            self.index_by_visit.insert(r["visit_id"], r)
+            self.index_by_patient.insert(r["patient_id"], r)
+            self.index_by_doctor.insert(r["doctor_id"], r)
+
+        print("Indexes built.")
+
+    def find_by_visit(self, vid):
+        return self.index_by_visit.search(vid)
+
+    def find_by_patient(self, pid):
+        return self.index_by_patient.search(pid)
+
+    def find_by_doctor(self, did):
+        return self.index_by_doctor.search(did)
+
+
+# ----------------------- MAIN PROGRAM -----------------------
+if __name__ == "__main__":
+    # 1) LOAD DATA
+    storage = DataStorage("patient_visits.csv")
+    storage.load_data()
+
+    # 2) BUILD INDEXES
+    index = IndexManager()
+    index.build(storage.get_all())
+
+    # 3) TEST A QUERY
+    print("\nExample search (patient_id = 101):")
+    result = index.find_by_patient(101)
+    print(result)
