@@ -1,46 +1,243 @@
 import csv
-import random
-from faker import Faker
 
-fake = Faker()
+#Storing csv in list where every value is a dictionary
+class DataStorage:
+    def __init__(self, path):
+        self.path = path
+        self.records = []
 
-path = r"C:\Users\ASUS\OneDrive - National Center for Educational Technologies\Desktop\DSA files\patient_visits.csv"
+    def load_data(self):
+        with open(self.path, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row["visit_id"] = int(row["visit_id"])
+                row["patient_id"] = int(row["patient_id"])
+                row["doctor_id"] = int(row["doctor_id"])
+                row["treatment_cost"] = float(row["treatment_cost"])
+                row["number_of_visits"] = int(row["number_of_visits"])
+                row["risk_score"] = float(row["risk_score"])
+                row["outcome_score"] = float(row["outcome_score"])
 
-department_diagnoses = {
-    "Cardiology": ["Hypertension", "Heart Failure", "Arrhythmia", "Myocardial Infarction"],
-    "Neurology": ["Migraine", "Stroke", "Epilepsy", "Parkinson's Disease"],
-    "Pediatrics": ["Asthma", "Bronchitis", "Chickenpox", "Allergies"],
-    "Oncology": ["Breast Cancer", "Lung Cancer", "Leukemia", "Lymphoma"],
-    "Orthopedics": ["Fracture", "Arthritis", "Back Pain", "Osteoporosis"]
-}
+                self.records.append(row)
+
+        print("Loaded", len(self.records), "records.")
+
+    def get_all(self):
+        return self.records
 
 
-num_records = 1000000
-num_patients = 500
-num_doctors = 100
+#AVL TREE on stored dataset
+class AVLNode:
+    def __init__(self, key, record_ids):
+        self.key = key
+        self.record_ids = record_ids
+        self.height = 1
+        self.left = None
+        self.right = None
 
-with open(path, "w", newline="") as file:
-    writer = csv.writer(file)
-    
-    writer.writerow([
-        "visit_id", "patient_id", "doctor_id", "department", "diagnosis",
-        "treatment_cost", "number_of_visits", "risk_score", "referral_doctor", "outcome_score"
-    ])
-    
-    for i in range(1, num_records + 1):
-        visit_id = i
-        patient_id = random.randint(1, num_patients)
-        doctor_id = random.randint(1, num_doctors)
-        department = random.choice(list(department_diagnoses.keys()))
-        diagnosis = random.choice(department_diagnoses[department])
-        treatment_cost = round(random.uniform(100, 20000), 2)
-        number_of_visits = random.randint(1, 20)
-        risk_score = round(random.uniform(0, 1), 2)
-        referral_doctor = random.randint(1, num_doctors)
-        outcome_score = round(random.uniform(0, 100), 2)
+
+class AVLTree:
+    def __init__(self):
+        self.root = None
+
+    #helpers to get height, change height, and detect balance between siblings
+    def get_height(self, node):
+        return node.height if node else 0
+
+    def get_balance(self, node):
+        return self.get_height(node.left) - self.get_height(node.right)
+
+    def update_height(self, node):
+        node.height = 1 + max(self.get_height(node.left),
+                              self.get_height(node.right))
+
+    #rotations to balance the tree after adding or removing
+    def rotate_left(self, x):
+        y = x.right   #we keep T2, put x as y's parent, then put T2 as left child of y
+        T2 = y.left  
+
+        y.left = x    
+        x.right = T2
+
+        self.update_height(x)
+        self.update_height(y)
+
+        return y
+
+    def rotate_right(self, x):
+        y = x.left       #the same for right
+        T3 = y.right
+
+        y.right = x
+        x.left = T3
+
+        self.update_height(x)
+        self.update_height(y)
+
+        return y
+
+    def insert(self, node, key, record_id):
+        if not node:
+            return AVLNode(key, [record_id])
+
+        if key < node.key:
+            node.left = self.insert(node.left, key, record_id)
+        elif key > node.key:
+            node.right = self.insert(node.right, key, record_id)
+        else:
+            #the logic is the same as ord. insert
+            #if the node is not in the tree create a node with the given id
+            #if the key is there, add the id to the node's values list
+            node.record_ids.append(record_id)
+            return node
+
+        self.update_height(node)
+        balance = self.get_balance(node)
+
+        #This part considers minus cases, as the balance factor
+        #does not compute the absolute value
+
+        #Single left rotation, 3 nodes: left child of left child
+        if balance > 1 and key < node.left.key:
+            return self.rotate_right(node)
+
+        #Single rotation for right
+        if balance < -1 and key > node.right.key:
+            return self.rotate_left(node)
+
+        #Double rotation 3 nodes: left child then right child
+        if balance > 1 and key > node.left.key:
+            node.left = self.rotate_left(node.left)
+            return self.rotate_right(node)
+
+        #Double rotation 3 nodes: right child then left child
+        if balance < -1 and key < node.right.key:
+            node.right = self.rotate_right(node.right)
+            return self.rotate_left(node)
+
+        return node
+
+    #The same method for user usage, as the user need to input the information he/she have
+    def add(self, key, record_id):
+        self.root = self.insert(self.root, key, record_id)
+
+    def search(self, key):
+        node = self.root
+        while node:
+            if key == node.key:
+                return node.record_ids
+            elif key < node.key:
+                node = node.left
+            else:
+                node = node.right
+        return []
+
+    def delete(self, node, key, record_id):
+        if not node:    #if no such node exist, no need to delete
+            return None
+
+        if key < node.key:
+            node.left = self.delete(node.left, key, record_id)
+        elif key > node.key:
+            node.right = self.delete(node.right, key, record_id)
+        else:
+            #if the key matches, remove id from values' list
+            if record_id in node.record_ids:
+                node.record_ids.remove(record_id)
+
+            #if after deletion the list is not empty, we keep the node
+            if len(node.record_ids) > 0:
+                return node
+
+            #otherwise, the same node deletion logic, copy the successor, delete the sentinel
+            if not node.left:
+                return node.right
+            if not node.right:
+                return node.left
+
+            successor = node.right
+            while successor.left:
+                successor = successor.left
+            node.key = successor.key
+            node.record_ids = successor.record_ids
+            node.right = self.delete(node.right, successor.key, successor.record_ids[0])
+
+        self.update_height(node)
+        balance = self.get_balance(node)
+
+        #rebalance part, the same way 
+        if balance > 1 and self.get_balance(node.left) >= 0:
+            return self.rotate_right(node)
         
-        writer.writerow([
-            visit_id, patient_id, doctor_id, department, diagnosis,
-            treatment_cost, number_of_visits, risk_score, referral_doctor, outcome_score
-        ])
+        if balance > 1 and self.get_balance(node.left) < 0:
+            node.left = self.rotate_left(node.left)
+            return self.rotate_right(node)
+        
+        if balance < -1 and self.get_balance(node.right) <= 0:
+            return self.rotate_left(node)
+        
+        if balance < -1 and self.get_balance(node.right) > 0:
+            node.right = self.rotate_right(node.right)
+            return self.rotate_left(node)
+
+        return node
+
+    #Delete for user
+    def remove(self, key, record_id):
+        self.root = self.delete(self.root, key, record_id)
+
+
+#CLASS INDEX MANAGER for building AVLs and using them
+class IndexManager:
+    def __init__(self):
+        self.by_patient = AVLTree()
+        self.by_doctor = AVLTree()
+        self.by_cost = AVLTree()
+        self.storage = None
+
+    def build(self, storage):
+        self.storage = storage
+        for record in storage:   #the record is a dictionary of a single row
+                                 #so we go over the dictionaries (rows) and take the key (desired column name)
+                                 #then for the values, add every new visit id to the values' list
+            self.by_patient.add(record["patient_id"], record["visit_id"])
+            self.by_doctor.add(record["doctor_id"], record["visit_id"])
+            self.by_cost.add(record["treatment_cost"], record["visit_id"])
+
+    #helpers for searching
+    def find_by_patient(self, patient_id):
+        return self.by_patient.search(patient_id)
+
+    def find_by_doctor(self, doctor_id):
+        return self.by_doctor.search(doctor_id)
+
+    def find_by_cost(self, cost):
+        return self.by_cost.search(cost)
+
+    #Insering and deleting from AVLs, as after adding or removing
+    #a visit in dataset, we should add of remove it from AVLs as well
+    def add_record(self, record):
+        #from stored data
+        self.storage.append(record)
+
+        #During insersion, we have to fix this problem  of adding dublicate visit_ids
+        #because we can not have two equal visit_ids with different information
+        #Now from AVLs
+        self.by_patient.add(record["patient_id"], record["visit_id"])
+        self.by_doctor.add(record["doctor_id"], record["visit_id"])
+        self.by_cost.add(record["treatment_cost"], record["visit_id"])
+
+    def delete_record(self, visit):
+        #from stored data
+        record = next((r for r in self.storage if r["visit_id"] == visit), None)
+        if not record:
+            return
+
+        self.storage.remove(record)
+
+        #from AVLs
+        self.by_patient.remove(record["patient_id"], visit)
+        self.by_doctor.remove(record["doctor_id"], visit)
+        self.by_cost.remove(record["treatment_cost"], visit)
+
 
