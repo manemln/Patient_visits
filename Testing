@@ -1,0 +1,44 @@
+print("STEP 1: LOADING STORAGE")
+storage = DataStorage("patient_visits.csv")
+storage.load_data()
+
+print("STEP 2: BUILD AVLs (patient, doctor, cost, visit_id)")
+index = IndexManager()
+index.build(storage.get_all())
+
+print("Find by patient", index.find_by_patient(101))
+print("Find by cost", index.find_by_cost(35000.0))
+print("Find by doc",index.find_by_doctor(12))
+print("Find by visit", index.find_by_visit(2))
+
+print("STEP 4: INSERTING A NEW RECORD")
+
+rec1 = {
+    "visit_id": 123,
+    "patient_id": 1000,
+    "doctor_id": 99,
+    "treatment_cost": 300.0,
+    "number_of_visits": 1,
+    "risk_score": 2.4,
+    "outcome_score": 8.1
+}
+
+print("added", index.add_record(rec1))
+
+
+print("STEP 5: DELETING A RECORD")
+
+removed = index.delete_record(126)
+print("Removed:", removed)
+
+print("STEP 6: RANGE QUERY FROM RECORD X TO RECORD Y")
+print("Visits with cost with a given range are ", index.range_query(index.by_cost, 15, 250))
+
+
+print("STEP 7: MODIFICATION OF A RECORD")
+updated = index.modify_record(125, "treatment_cost", 855.0)
+print("Updated record:", updated)
+
+
+index.find_by_cost_range(100, 200)
+
