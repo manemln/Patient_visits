@@ -49,8 +49,12 @@ class Graph:
         self.directed = directed
         self.vertices = {}  # maps visit_id to Vertex object, {1:Vertex(1),...}
         #Adjacency map = vertex -> {opposite_vertex: Edge} 
-        self.outgoing = {} #{opposites:edge}
-        self.incoming = {} #{opposites:edge}
+        self.outgoing = {} #{
+                                Vertex(1):{
+                                            Vertex(15): Edge(1→15), ...
+                                          }
+                            #}
+        self.incoming = {} #like outgoing
     
     #basic graph operations
     def num_vertices(self):
@@ -58,28 +62,25 @@ class Graph:
     
     def num_edges(self):
         total = sum(len(edges) for edges in self.outgoing.values())
-        return total if self.directed else total // 2
+        return total
     
     def get_vertices(self):
-        """Return an iterable of all vertices"""
         return self.vertices.values()
+        #getting all vertices
     
     def get_edges(self):
-        """Return a set of all edges (avoid duplicates in undirected)"""
-        edges = set()
+        edges = []
         for vertex_edges in self.outgoing.values():
-            edges.update(vertex_edges.values())
+            edges.extend(vertex_edges.values())
         return edges
-    
+        #won't have duplicates as we use directed graph in case of undirected we would use set to avoid duplics
+
     def get_vertex(self, visit_id):
-        """Get vertex by visit_id"""
         return self.vertices.get(visit_id)
+        #getting 1 vertex by visit_id
     
     def get_edge(self, u, v):
-        """
-        Return edge from vertex u to vertex v, or None if it doesn't exist.
-        u and v can be Vertex objects or visit_ids
-        """
+        #returns edge from vertex u to v, or None if it doesn't exist
         if isinstance(u, int):
             u = self.vertices.get(u)
         if isinstance(v, int):
@@ -88,13 +89,11 @@ class Graph:
         if u is None or v is None:
             return None
         
-        return self.outgoing.get(u, {}).get(v)
+        return self.outgoing.get(u, {}).get(v) 
+#if u exists returns its values{vertex-edge couples},get the value of vertex v inside it which is the correspoding edge 
     
     def degree(self, v, outgoing=True):
-        """
-        Return number of outgoing edges from v (or incoming if outgoing=False).
-        For undirected graphs, these are the same.
-        """
+        #return number of outgoing edges from v
         if isinstance(v, int):
             v = self.vertices.get(v)
         
@@ -102,18 +101,14 @@ class Graph:
         return len(adj_map.get(v, {}))
     
     def out_degree(self, v):
-        """Return number of outgoing edges from vertex v"""
         return self.degree(v, True)
     
     def in_degree(self, v):
-        """Return number of incoming edges to vertex v"""
         return self.degree(v, False)
     
     def incident_edges(self, v, outgoing=True):
-        """
-        Return all outgoing (or incoming) edges from vertex v.
-        Returns dictionary {opposite_vertex: edge}
-        """
+        #return all outgoing (or incoming) edges from vertex v
+        #returns dictionary {opposite_vertex: edge}
         if isinstance(v, int):
             v = self.vertices.get(v)
         
@@ -121,17 +116,14 @@ class Graph:
         return adj_map.get(v, {})
     
     def outgoing_edges(self, v):
-        """Return dictionary of outgoing edges from v"""
         return self.incident_edges(v, True)
     
     def incoming_edges(self, v):
-        """Return dictionary of incoming edges to v"""
         return self.incident_edges(v, False)
     
-    # ==================== MODIFICATION OPERATIONS ====================
-    
+    #modification operations
     def insert_vertex(self, visit_id, element=None):
-        """Create and return a new Vertex storing visit_id"""
+        #creates and returns a new Vertex storing visit_id
         if visit_id in self.vertices:
             return self.vertices[visit_id]
         
@@ -142,11 +134,8 @@ class Graph:
         return v
     
     def insert_edge(self, u, v, element=None):
-        """
-        Create and return a new Edge from vertex u to vertex v.
-        u and v can be Vertex objects or visit_ids.
-        element can store referral information (e.g., referring doctor_id)
-        """
+        #creates and returns a new Edge from vertex u to vertex v
+
         # Convert visit_ids to Vertex objects if needed
         if isinstance(u, int):
             if u not in self.vertices:
@@ -164,7 +153,7 @@ class Graph:
         if v in self.outgoing[u]:
             return self.outgoing[u][v]
         
-        # Create the edge
+        #Creating edge
         e = Edge(u, v, element)
         self.outgoing[u][v] = e
         self.incoming[v][u] = e
@@ -172,7 +161,7 @@ class Graph:
         return e
     
     def remove_vertex(self, v):
-        """Remove vertex v and all its incident edges"""
+        #remove vertex v and all its incident edges
         if isinstance(v, int):
             v = self.vertices.get(v)
         
@@ -180,8 +169,8 @@ class Graph:
             return
         
         # Remove all outgoing edges
-        for dest in list(self.outgoing[v].keys()):
-            del self.incoming[dest][v]
+        for dest in list(self.outgoing[v].keys()):#{dest:edge}
+            del self.incoming[dest][v]#remove value of dest which is the edge connecting origin to dest
         del self.outgoing[v]
         
         # Remove all incoming edges
@@ -193,41 +182,37 @@ class Graph:
         del self.vertices[v.visit_id]
     
     def remove_edge(self, e):
-        """Remove edge e from the graph"""
-        u, v = e.endpoints()
+        u, v = e.endpoints() #origin goes to destination
         
-        if v in self.outgoing.get(u, {}):
-            del self.outgoing[u][v]
+        if v in self.outgoing.get(u, {}): # takes origins' values {dest:edge,dest:edge,...}
+            del self.outgoing[u][v] # remove dest:edge couple
         
         if u in self.incoming.get(v, {}):
             del self.incoming[v][u]
     
-    # ==================== GRAPH TRAVERSALS ====================
+    #traversals
     
     def BFS(self, start_visit_id):
-        """
-        Breadth-First Search starting from start_visit_id.
-        Returns dictionary: {visit_id: distance_from_start}
-        Also sets vertex.color, vertex.distance, vertex.predecessor
-        """
-        # Initialize all vertices
+        #returns dictionary: {visit_id: distance_from_start}
+        #sets vertex.color, vertex.distance, vertex.predecessor
+
         for vertex in self.vertices.values():
             vertex.color = "white"
             vertex.distance = float('inf')
             vertex.predecessor = None
         
-        # Get start vertex
+        #start vertex
         start = self.vertices.get(start_visit_id)
         if start is None:
             print(f"Start vertex {start_visit_id} not found")
             return {}
         
-        # Initialize start vertex
+        #Initialize start vertex
         start.color = "gray"
         start.distance = 0
         start.predecessor = None
         
-        # Use a list as a queue (append to end, pop from beginning)
+        #list as a queue (append to end, pop from beginning)
         queue = [start]
         distances = {start.visit_id: 0}
         
@@ -236,7 +221,7 @@ class Graph:
             
             # Explore all adjacent vertices
             for v, edge in self.outgoing[u].items():
-                if v.color == "white":  # Undiscovered
+                if v.color == "white": 
                     v.color = "gray"
                     v.distance = u.distance + 1
                     v.predecessor = u
@@ -248,12 +233,9 @@ class Graph:
         return distances
     
     def DFS(self):
-        """
-        Depth-First Search on entire graph.
-        Returns dictionary: {visit_id: (discovery_time, finish_time)}
-        Also sets vertex.color, vertex.discovery_time, vertex.finish_time, vertex.predecessor
-        """
-        # Initialize all vertices
+        #returns dictionary: {visit_id: (discovery_time, finish_time)}
+       #sets vertex.color, vertex.discovery_time, vertex.finish_time, vertex.predecessor
+    
         for vertex in self.vertices.values():
             vertex.color = "white"
             vertex.predecessor = None
@@ -287,10 +269,7 @@ class Graph:
         return times
     
     def DFS_from_vertex(self, start_visit_id):
-        """
-        Depth-First Search starting from a specific vertex.
-        Returns list of visit_ids in DFS order.
-        """
+        #returns list of visit_ids in DFS order
         start = self.vertices.get(start_visit_id)
         if start is None:
             print(f"Start vertex {start_visit_id} not found")
@@ -316,36 +295,34 @@ class Graph:
         return dfs_order
     
     def find_path(self, start_visit_id, end_visit_id):
-        """
-        Find shortest path from start to end using BFS.
-        Returns list of visit_ids representing the path, or empty list if no path exists.
-        """
-        # Run BFS from start
+        #finding the shortest path from start to end using BFS
+        #returns list of visit_ids representing the path, or empty list if no path exists
+     
+        #BFS from start
         self.BFS(start_visit_id)
         
         end = self.vertices.get(end_visit_id)
         if end is None or end.distance == float('inf'):
             return []  # No path exists
         
-        # Reconstruct path by following predecessors backward
+        #path by following predecessors backward
         path = []
         current = end
         while current is not None:
             path.append(current.visit_id)
             current = current.predecessor
         
-        path.reverse()  # Reverse to get start -> end order
+        path.reverse()  #get start to end order
         return path
     
     def is_connected(self):
-        """
-        Check if graph is connected (for undirected) or weakly connected (for directed).
-        Returns True if all vertices are reachable from any starting vertex.
-        """
+        #checking if graph is connected
+        #returns True if all vertices are reachable from any starting vertex
+        
         if len(self.vertices) == 0:
             return True
         
-        # Pick any vertex
+        #any vertex
         start = next(iter(self.vertices.values()))
         
         # Run DFS
@@ -361,26 +338,25 @@ class Graph:
         return len(visited) == len(self.vertices)
     
     def topological_sort(self):
-        """
-        Perform topological sort on a directed acyclic graph (DAG).
-        Returns list of visit_ids in topological order, or None if graph has cycles.
-        """
-        if not self.directed:
-            print("Topological sort only works on directed graphs")
-            return None
+        #topological sort on DAG
+        #returns list of visit_ids in topological order, or None if graph has cycles
         
         # Run DFS to compute finish times
         times = self.DFS()
         
         # Sort vertices by decreasing finish time
-        sorted_vertices = sorted(times.items(), key=lambda x: x[1][1], reverse=True)
+        sorted_vertices = sorted(times.items(), key=lambda x: x[1][1], reverse=True) #((vertex,(1,8)),(vertex2,())
         return [visit_id for visit_id, _ in sorted_vertices]
-    
+
+
+
+
+
+
+ #---------------------------------------------------------------------------------------------
     def transpose(self):
-        """
-        Create and return the transpose of this graph (all edges reversed).
-        Used for finding strongly connected components.
-        """
+        #used for finding strongly connected components
+
         gt = Graph(directed=self.directed)
         
         # Add all vertices
@@ -395,10 +371,10 @@ class Graph:
         return gt
     
     def strongly_connected_components(self):
-        """
-        Find strongly connected components using Kosaraju's algorithm.
-        Returns list of lists, where each inner list is a strongly connected component.
-        """
+       
+        #find strongly connected components using s
+        #returns list of lists, where each inner list is a strongly connected component
+
         if not self.directed:
             print("SCC only applies to directed graphs")
             return None
@@ -438,38 +414,12 @@ class Graph:
         
         return sccs
     
-    # ==================== UTILITY METHODS ====================
-    
-    def print_graph(self, limit=20):
-        """Print graph structure (limited to first 'limit' vertices)"""
-        print(f"\n{'='*60}")
-        print(f"Graph: {'Directed' if self.directed else 'Undirected'}")
-        print(f"Vertices: {self.num_vertices()}, Edges: {self.num_edges()}")
-        print(f"{'='*60}")
-        
-        count = 0
-        for visit_id, vertex in self.vertices.items():
-            if count >= limit:
-                print(f"... (showing first {limit} vertices only)")
-                break
-            
-            out_edges = self.outgoing[vertex]
-            if out_edges:
-                neighbors = [str(v.visit_id) for v in out_edges.keys()]
-                print(f"Visit {visit_id} -> {', '.join(neighbors)}")
-            else:
-                print(f"Visit {visit_id} -> (no outgoing edges)")
-            count += 1
-        print(f"{'='*60}\n")
-
-
-# ==================== GRAPH MANAGER ====================
+  
+# GRAPH MANAGER
 
 class GraphManager:
     """
-    Manages the graph representation of medical referrals.
-    Integrates with IndexManager to build graph from visit records.
-    
+    Integrates with IndexManager to build graph from visit records
     GRAPH BUILDING STRATEGY:
     - Vertices: Each visit_id is a vertex
     - Edges: Created based on doctor referrals between patients
@@ -478,6 +428,7 @@ class GraphManager:
     we find the visit where P sees D2 and create an edge from the original visit
     to the referred visit.
     """
+
     def __init__(self):
         self.graph = Graph(directed=True)
         self.storage = None
@@ -739,7 +690,7 @@ class GraphManager:
         return dept_referrals
 
 
-# ==================== USAGE EXAMPLE ====================
+#  USAGE EXAMPLE 
 """
 # After loading your data and building indexes:
 
