@@ -194,7 +194,7 @@ class IndexManager:
         self.by_doctor = AVLTree()
         self.by_cost = AVLTree()
         self.by_visit = AVLTree()  #To fix the problem mentioned (row ...) we added this AVL
-                                   #AVL will keep more space, but will let us to quickly see whether
+        #NEEDS TO BE CHANGED       #AVL will keep more space, but will let us to quickly see whether
                                    #we have the visit_id we wanted to insert
         self.storage = {}
 
