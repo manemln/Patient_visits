@@ -1,4 +1,3 @@
-
 #GRAPH
 class Vertex:
     #vertex in the graph (a visit_id)
@@ -348,22 +347,16 @@ class Graph:
         sorted_vertices = sorted(times.items(), key=lambda x: x[1][1], reverse=True) #((vertex,(1,8)),(vertex2,())
         return [visit_id for visit_id, _ in sorted_vertices]
 
-
-
-
-
-
- #---------------------------------------------------------------------------------------------
     def transpose(self):
         #used for finding strongly connected components
 
         gt = Graph(directed=self.directed)
         
-        # Add all vertices
+        #adding all vertices
         for visit_id, vertex in self.vertices.items():
             gt.insert_vertex(visit_id, vertex.element)
         
-        # Add all edges in reverse direction
+        #adding all edges in reverse direction
         for edge in self.get_edges():
             u, v = edge.endpoints()
             gt.insert_edge(v.visit_id, u.visit_id, edge.element)
@@ -372,21 +365,16 @@ class Graph:
     
     def strongly_connected_components(self):
        
-        #find strongly connected components using s
+        #finding strongly connected components using s
         #returns list of lists, where each inner list is a strongly connected component
 
-        if not self.directed:
-            print("SCC only applies to directed graphs")
-            return None
-        
-        # Step 1: Run DFS on original graph to get finish times
+        # Step 1: Running DFS on original graph to get finish times
         times = self.DFS()
         
-        # Step 2: Create transpose graph
+        # Step 2: Creating transpose graph
         gt = self.transpose()
         
-        # Step 3: Run DFS on transpose in decreasing finish time order
-        # Initialize
+        # Step 3: Running DFS on transpose in decreasing finish time order
         for vertex in gt.vertices.values():
             vertex.color = "white"
         
@@ -420,13 +408,13 @@ class Graph:
 class GraphManager:
     """
     Integrates with IndexManager to build graph from visit records
-    GRAPH BUILDING STRATEGY:
-    - Vertices: Each visit_id is a vertex
-    - Edges: Created based on doctor referrals between patients
+    GRAPH BUILDING:
+    Vertices: Each visit_id is a vertex
+    Edges: Created based on doctor referrals between patients
     
-    Logic: When patient P sees doctor D1 and gets referred to doctor D2,
+    When patient P sees doctor D1 and gets referred to doctor D2,
     we find the visit where P sees D2 and create an edge from the original visit
-    to the referred visit.
+    to the referred visit
     """
 
     def __init__(self):
@@ -435,22 +423,19 @@ class GraphManager:
     
     def build_from_records(self, storage, index_manager):
         """
-        Build graph from medical records using referral_doctor field.
-        
-        Strategy:
-        1. Add all visits as vertices
+        1. Adding all visits as vertices
         2. For each visit with a referral_doctor:
-           - Find other visits by the same patient
-           - If the patient later visited the referral_doctor, create edge
+            Find other visits by the same patient
+            If the patient later visited the referral_doctor, create edge
         
         Args:
-            storage: Dictionary of records {visit_id: record}
-            index_manager: IndexManager instance for efficient queries
+            storage: Dictionary of records {visit_id: record}, accessing by id
+            index_manager: IndexManager instance for efficient queries, acessing by other criterias
         """
+
         self.storage = storage
-        print("Building graph from referral patterns...")
         
-        # Step 1: Add all visits as vertices
+        # Step 1: Adding all visits as vertices
         for visit_id, record in storage.items():
             self.graph.insert_vertex(visit_id, record)
         
@@ -478,7 +463,7 @@ class GraphManager:
                     
                     # If the other visit is with the referral doctor
                     if other_record['doctor_id'] == referral_doctor:
-                        # Create edge: current_visit -> referred_visit
+                        # edge: current_visit -> referred_visit
                         self.graph.insert_edge(
                             visit_id,
                             other_visit_id,
@@ -489,38 +474,37 @@ class GraphManager:
                             }
                         )
                         edges_created += 1
-                        break  # Only create one edge per referral
+                        break  #Only create one edge per referral
         
         print(f"Created {edges_created} referral edges")
         print(f"Graph built successfully: {self.graph.num_vertices()} vertices, {self.graph.num_edges()} edges")
     
     def add_referral(self, from_visit_id, to_visit_id, referral_doctor=None):
-        """Add a referral edge from one visit to another"""
+        #adding referral edge from one visit to another
         element = {'referral_doctor': referral_doctor} if referral_doctor else None
         return self.graph.insert_edge(from_visit_id, to_visit_id, element)
     
     def find_referral_chain(self, visit_id):
-        """
-        Find the chain of referrals leading to this visit.
-        Returns list of visit_ids from original visit to current.
-        Uses backward traversal through incoming edges.
-        """
+        #finding the chain of referrals leading to this visit
+        #returns list of visit_ids from original visit to current
+        #uses backward traversal through incoming edges
+        
         vertex = self.graph.get_vertex(visit_id)
         if vertex is None:
             return []
         
         chain = []
-        visited = set()  # Prevent infinite loops
+        visited = set()  # Prevent infinite loops, to avoid duplicates if we have a cycle
         current = vertex
         
-        # Follow predecessors backward (incoming edges)
+        #following predecessors backward (incoming edges)
         while current and current.visit_id not in visited:
             chain.insert(0, current.visit_id)
             visited.add(current.visit_id)
             
             incoming = self.graph.incoming_edges(current)
             if len(incoming) == 0:
-                break
+                break #reached the start
             
             # Take the first incoming edge (assume single referral source)
             predecessor = next(iter(incoming.keys()))
@@ -529,18 +513,16 @@ class GraphManager:
         return chain
     
     def find_all_referrals_from(self, visit_id):
-        """
-        Find all visits that were referred from this visit (direct and indirect).
-        Uses BFS to find all reachable visits.
-        """
+        #find all visits that were referred from this visit (direct and indirect)
+        #uses BFS to find all reachable visits
+        
         distances = self.graph.BFS(visit_id)
         return list(distances.keys())
     
     def find_patient_journey(self, patient_id):
-        """
-        Find the complete journey of a patient through different doctors.
-        Returns list of (visit_id, doctor_id, diagnosis) tuples in chronological order.
-        """
+        #find the complete journey of a patient through different doctors
+        #returns list of (visit_id, doctor_id, diagnosis) tuples in chronological order
+
         if not self.storage:
             return []
         
@@ -557,16 +539,15 @@ class GraphManager:
                 })
         
         return journey
-    
+
+
     def find_doctor_referral_network(self, doctor_id, depth=1):
-        """
-        Find the network of doctors that this doctor refers to (or gets referrals from).
-        Returns set of doctor_ids at given depth.
+        #find the network of doctors that this doctor refers to (or gets referrals from)
+        #returns set of doctor_ids at given depth
         
-        Args:
-            doctor_id: The doctor to analyze
-            depth: How many referral steps to follow (1 = direct, 2 = indirect, etc.)
-        """
+        #doctor_id: doctor to analyze
+        #depth: How many referral steps to follow (1 = direct, 2 = indirect, etc.)
+        
         if not self.storage:
             return set()
         
@@ -579,7 +560,7 @@ class GraphManager:
         
         # If depth > 1, recursively find referrals from referred doctors
         if depth > 1:
-            extended_network = set(referred_doctors)
+            extended_network = set(referred_doctors) #copy of referred_doctors to work on
             for ref_doctor in referred_doctors:
                 extended_network.update(
                     self.find_doctor_referral_network(ref_doctor, depth - 1)
@@ -589,7 +570,6 @@ class GraphManager:
         return referred_doctors
     
     def get_referral_statistics(self):
-        """Get comprehensive statistics about referral patterns"""
         stats = {
             'total_visits': self.graph.num_vertices(),
             'total_referral_edges': self.graph.num_edges(),
@@ -597,7 +577,6 @@ class GraphManager:
             'visits_that_were_referred': 0,
             'max_referrals_from_one_visit': 0,
             'max_incoming_referrals': 0,
-            'isolated_visits': 0,
             'avg_referrals_per_visit': 0
         }
         
@@ -619,9 +598,6 @@ class GraphManager:
                 stats['max_incoming_referrals'] = max(
                     stats['max_incoming_referrals'], in_deg
                 )
-            
-            if out_deg == 0 and in_deg == 0:
-                stats['isolated_visits'] += 1
         
         if stats['total_visits'] > 0:
             stats['avg_referrals_per_visit'] = round(
@@ -629,46 +605,23 @@ class GraphManager:
             )
         
         return stats
-    
-    def find_longest_referral_chain(self):
-        """
-        Find the longest chain of referrals in the graph.
-        Returns (length, chain) tuple where chain is list of visit_ids.
-        """
-        max_length = 0
-        max_chain = []
-        
-        # Try BFS from each vertex to find longest path
-        for start_vertex in self.graph.get_vertices():
-            distances = self.graph.BFS(start_vertex.visit_id)
-            
-            for visit_id, dist in distances.items():
-                if dist > max_length:
-                    max_length = dist
-                    # Reconstruct the path
-                    path = self.graph.find_path(start_vertex.visit_id, visit_id)
-                    max_chain = path
-        
-        return max_length, max_chain
-    
+
     def detect_referral_cycles(self):
-        """
-        Detect if there are any cycles in referral patterns.
-        Returns list of strongly connected components with size > 1.
-        """
+        #detects if there are any cycles in referral patterns
+        #returns list of strongly connected components with size > 1.
+      
         sccs = self.graph.strongly_connected_components()
         cycles = [scc for scc in sccs if len(scc) > 1]
         return cycles
     
-    def print_graph(self, limit=20):
+    def print_graph(self, limit=20): #prints first 20visits as vertices in the graph
         """Print the graph structure"""
         self.graph.print_graph(limit)
     
     def analyze_department_referrals(self):
-        """
-        Analyze which departments refer to which other departments.
-        Returns dictionary: {from_dept: {to_dept: count}}
-        """
+        #analyzes which departments refer to which other departments
+        #returns dictionary: {from_dept: {to_dept: count}}
+
         if not self.storage:
             return {}
         
@@ -688,58 +641,3 @@ class GraphManager:
             dept_referrals[from_dept][to_dept] += 1
         
         return dept_referrals
-
-
-#  USAGE EXAMPLE 
-"""
-# After loading your data and building indexes:
-
-# 1. Load data
-storage_obj = DataStorage("patient_visits.csv")
-storage_obj.load_data()
-records = storage_obj.get_all()
-
-# 2. Build indexes
-index_manager = IndexManager()
-index_manager.build(records)
-
-# 3. Build graph
-graph_manager = GraphManager()
-graph_manager.build_from_records(records, index_manager)
-
-# 4. Use graph features
-stats = graph_manager.get_referral_statistics()
-print(stats)
-
-# Find referral chain for a specific visit
-chain = graph_manager.find_referral_chain(visit_id=100)
-print(f"Referral chain: {chain}")
-
-# Find longest referral chain
-length, chain = graph_manager.find_longest_referral_chain()
-print(f"Longest chain: {length} steps, visits: {chain}")
-
-# Find all visits a patient went through
-journey = graph_manager.find_patient_journey(patient_id=213)
-print(f"Patient journey: {journey}")
-
-# BFS from a specific visit
-all_referrals = graph_manager.find_all_referrals_from(visit_id=1)
-print(f"All referrals from visit 1: {all_referrals}")
-
-# DFS on entire graph
-times = graph_manager.graph.DFS()
-print(f"DFS discovery/finish times: {list(times.items())[:10]}")
-
-# Find strongly connected components (referral cycles)
-cycles = graph_manager.detect_referral_cycles()
-print(f"Referral cycles found: {len(cycles)}")
-
-# Analyze department referral patterns
-dept_analysis = graph_manager.analyze_department_referrals()
-print(f"Department referrals: {dept_analysis}")
-
-# Print graph structure
-graph_manager.print_graph(limit=30)
-"""
-
