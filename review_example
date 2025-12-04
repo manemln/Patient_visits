@@ -315,6 +315,17 @@ class IndexManager:
 
 
 
+
+
+
+#__________________________________________________
+
+
+
+
+
+
+
 #GRAPH
 class Vertex:
     #vertex in the graph (a visit_id)
@@ -857,7 +868,7 @@ class GraphManager:
         
         return journey
 
-#------------------------------------------------------------------------------------------------------
+
     def find_doctor_referral_network(self, doctor_id, depth=1):
         #find the network of doctors that this doctor refers to (or gets referrals from)
         #returns set of doctor_ids at given depth
@@ -887,7 +898,6 @@ class GraphManager:
         return referred_doctors
     
     def get_referral_statistics(self):
-        """Get comprehensive statistics about referral patterns"""
         stats = {
             'total_visits': self.graph.num_vertices(),
             'total_referral_edges': self.graph.num_edges(),
@@ -895,7 +905,6 @@ class GraphManager:
             'visits_that_were_referred': 0,
             'max_referrals_from_one_visit': 0,
             'max_incoming_referrals': 0,
-            'isolated_visits': 0,
             'avg_referrals_per_visit': 0
         }
         
@@ -917,9 +926,6 @@ class GraphManager:
                 stats['max_incoming_referrals'] = max(
                     stats['max_incoming_referrals'], in_deg
                 )
-            
-            if out_deg == 0 and in_deg == 0:
-                stats['isolated_visits'] += 1
         
         if stats['total_visits'] > 0:
             stats['avg_referrals_per_visit'] = round(
@@ -927,46 +933,23 @@ class GraphManager:
             )
         
         return stats
-    
-    def find_longest_referral_chain(self):
-        """
-        Find the longest chain of referrals in the graph.
-        Returns (length, chain) tuple where chain is list of visit_ids.
-        """
-        max_length = 0
-        max_chain = []
-        
-        # Try BFS from each vertex to find longest path
-        for start_vertex in self.graph.get_vertices():
-            distances = self.graph.BFS(start_vertex.visit_id)
-            
-            for visit_id, dist in distances.items():
-                if dist > max_length:
-                    max_length = dist
-                    # Reconstruct the path
-                    path = self.graph.find_path(start_vertex.visit_id, visit_id)
-                    max_chain = path
-        
-        return max_length, max_chain
-    
+
     def detect_referral_cycles(self):
-        """
-        Detect if there are any cycles in referral patterns.
-        Returns list of strongly connected components with size > 1.
-        """
+        #detects if there are any cycles in referral patterns
+        #returns list of strongly connected components with size > 1.
+      
         sccs = self.graph.strongly_connected_components()
         cycles = [scc for scc in sccs if len(scc) > 1]
         return cycles
     
-    def print_graph(self, limit=20):
+    def print_graph(self, limit=20): #prints first 20visits as vertices in the graph
         """Print the graph structure"""
         self.graph.print_graph(limit)
     
     def analyze_department_referrals(self):
-        """
-        Analyze which departments refer to which other departments.
-        Returns dictionary: {from_dept: {to_dept: count}}
-        """
+        #analyzes which departments refer to which other departments
+        #returns dictionary: {from_dept: {to_dept: count}}
+
         if not self.storage:
             return {}
         
@@ -986,58 +969,3 @@ class GraphManager:
             dept_referrals[from_dept][to_dept] += 1
         
         return dept_referrals
-
-
-#  USAGE EXAMPLE 
-"""
-# After loading your data and building indexes:
-
-# 1. Load data
-storage_obj = DataStorage("patient_visits.csv")
-storage_obj.load_data()
-records = storage_obj.get_all()
-
-# 2. Build indexes
-index_manager = IndexManager()
-index_manager.build(records)
-
-# 3. Build graph
-graph_manager = GraphManager()
-graph_manager.build_from_records(records, index_manager)
-
-# 4. Use graph features
-stats = graph_manager.get_referral_statistics()
-print(stats)
-
-# Find referral chain for a specific visit
-chain = graph_manager.find_referral_chain(visit_id=100)
-print(f"Referral chain: {chain}")
-
-# Find longest referral chain
-length, chain = graph_manager.find_longest_referral_chain()
-print(f"Longest chain: {length} steps, visits: {chain}")
-
-# Find all visits a patient went through
-journey = graph_manager.find_patient_journey(patient_id=213)
-print(f"Patient journey: {journey}")
-
-# BFS from a specific visit
-all_referrals = graph_manager.find_all_referrals_from(visit_id=1)
-print(f"All referrals from visit 1: {all_referrals}")
-
-# DFS on entire graph
-times = graph_manager.graph.DFS()
-print(f"DFS discovery/finish times: {list(times.items())[:10]}")
-
-# Find strongly connected components (referral cycles)
-cycles = graph_manager.detect_referral_cycles()
-print(f"Referral cycles found: {len(cycles)}")
-
-# Analyze department referral patterns
-dept_analysis = graph_manager.analyze_department_referrals()
-print(f"Department referrals: {dept_analysis}")
-
-# Print graph structure
-graph_manager.print_graph(limit=30)
-"""
-
