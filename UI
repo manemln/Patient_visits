@@ -802,3 +802,5 @@ else:
                     st.code(" -> ".join(map(str, path)))
                 else:
                     st.warning("No path found between these two visits.")
+
+#streamlit run app.py
