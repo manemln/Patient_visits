@@ -1,806 +1,519 @@
 import streamlit as st
-import pandas as pd
-import csv
-from collections import deque
-
-class DataStorage:
-    def __init__(self, path):
-        self.path = path
-        self.records = {}
-
-    def load_data(self):
-        try:
-            with open(self.path, "r") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # Type conversion (important for AVL and Graph keys)
-                    try:
-                        row["visit_id"] = int(row["visit_id"])
-                        row["patient_id"] = int(row["patient_id"])
-                        row["doctor_id"] = int(row["doctor_id"])
-                        row["treatment_cost"] = float(row["treatment_cost"])
-                        row["number_of_visits"] = int(row["number_of_visits"])
-                        row["risk_score"] = float(row["risk_score"])
-                        row["outcome_score"] = float(row["outcome_score"])
-                        # Handle 'referral_doctor' as int/None
-                        try:
-                             row['referral_doctor'] = int(row['referral_doctor'])
-                        except ValueError:
-                             row['referral_doctor'] = None # No referral
-
-                        self.records[row["visit_id"]] = row
-                    except ValueError as e:
-                        st.error(f"Skipping row due to data type error: {e} in row {row}")
-                        continue
-
-
-            st.success(f"Loaded {len(self.records)} records.")
-        except FileNotFoundError:
-             st.error(f"File not found at path: {self.path}. Please provide a valid CSV file.")
-             return
-
-    def get_all(self):
-        return self.records
-
-# AVL TREE on stored dataset
-class AVLNode:
-
-    def __init__(self, key, record_ids):
-        self.key = key
-        self.record_ids = record_ids
-        self.height = 1
-        self.left = None
-        self.right = None
-
-class AVLTree:
-   
-    def __init__(self):
-        self.root = None
-
-    def get_height(self, node):
-        return node.height if node else 0
-
-    def get_balance(self, node):
-        return self.get_height(node.left) - self.get_height(node.right)
-
-    def update_height(self, node):
-        node.height = 1 + max(self.get_height(node.left),
-                              self.get_height(node.right))
-
-    def rotate_left(self, x):
-        y = x.right
-        T2 = y.left
-
-        y.left = x
-        x.right = T2
-
-        self.update_height(x)
-        self.update_height(y)
-
-        return y
-
-    def rotate_right(self, x):
-        y = x.left
-        T3 = y.right
-
-        y.right = x
-        x.left = T3
-
-        self.update_height(x)
-        self.update_height(y)
-
-        return y
-
-    def insert(self, node, key, record_id):
-        if not node:
-            return AVLNode(key, [record_id])
-
-        if key < node.key:
-            node.left = self.insert(node.left, key, record_id)
-        elif key > node.key:
-            node.right = self.insert(node.right, key, record_id)
-        else:
-            node.record_ids.append(record_id)
-            return node
-
-        self.update_height(node)
-        balance = self.get_balance(node)
-
-        # Single left rotation, 3 nodes: left child of left child
-        if balance > 1 and key < node.left.key:
-            return self.rotate_right(node)
-
-        # Single rotation for right
-        if balance < -1 and key > node.right.key:
-            return self.rotate_left(node)
-
-        # Double rotation 3 nodes: left child then right child
-        if balance > 1 and key > node.left.key:
-            node.left = self.rotate_left(node.left)
-            return self.rotate_right(node)
-
-        # Double rotation 3 nodes: right child then left child
-        if balance < -1 and key < node.right.key:
-            node.right = self.rotate_right(node.right)
-            return self.rotate_left(node)
-
-        return node
-
-    def add(self, key, record_id):
-        self.root = self.insert(self.root, key, record_id)
-
-    def search(self, key):
-        node = self.root
-        while node:
-            if key < node.key:
-                node = node.left
-            elif key > node.key:
-                node = node.right
-            else:
-                return list(node.record_ids)
-        return []
-
-    def delete(self, node, key, record_id):
-        if not node:
-            return None
-
-        if key < node.key:
-            node.left = self.delete(node.left, key, record_id)
-        elif key > node.key:
-            node.right = self.delete(node.right, key, record_id)
-        else:
-            if record_id in node.record_ids:
-                node.record_ids.remove(record_id)
-
-            if len(node.record_ids) > 0:
-                return node
-
-            if not node.left:
-                return node.right
-            if not node.right:
-                return node.left
-
-            successor = node.right
-            while successor.left:
-                successor = successor.left
-            node.key = successor.key
-            node.record_ids = successor.record_ids
-            node.right = self.delete(node.right, successor.key, successor.record_ids[0])
-
-        self.update_height(node)
-        balance = self.get_balance(node)
-
-        if balance > 1 and self.get_balance(node.left) >= 0:
-            return self.rotate_right(node)
-
-        if balance > 1 and self.get_balance(node.left) < 0:
-            node.left = self.rotate_left(node.left)
-            return self.rotate_right(node)
-
-        if balance < -1 and self.get_balance(node.right) <= 0:
-            return self.rotate_left(node)
-
-        if balance < -1 and self.get_balance(node.right) > 0:
-            node.right = self.rotate_right(node.right)
-            return self.rotate_left(node)
-
-        return node
-
-    def remove(self, key, record_id):
-        self.root = self.delete(self.root, key, record_id)
-
-    def inorder_keys_within_range(self, node, low, high, result):
-        if not node:
-            return
-
-        if node.key >= low:
-            self.inorder_keys_within_range(node.left, low, high, result)
-
-        if low <= node.key <= high:
-            for visit_id in node.record_ids:
-                result.append(visit_id)
-
-        if node.key <= high:
-            self.inorder_keys_within_range(node.right, low, high, result)
-
-
-# CLASS INDEX MANAGER for building AVLs and using them
-class IndexManager:
-    # ... (Keep the original IndexManager class content here) ...
-    def __init__(self):
-        self.by_patient = AVLTree()
-        self.by_doctor = AVLTree()
-        self.by_cost = AVLTree()
-        self.by_visit = AVLTree()
-        self.storage = {}
-
-    def build(self, storage):
-        self.storage = storage
-        for visit_id, record in storage.items():
-            self.by_patient.add(record["patient_id"], visit_id)
-            self.by_doctor.add(record["doctor_id"], visit_id)
-            self.by_cost.add(record["treatment_cost"], visit_id)
-            self.by_visit.add(visit_id, visit_id)
-
-    def find_by_patient(self, patient_id):
-        return self.by_patient.search(patient_id)
-
-    def find_by_doctor(self, doctor_id):
-        return self.by_doctor.search(doctor_id)
-
-    def find_by_cost(self, cost):
-        return self.by_cost.search(cost)
-
-    def find_by_visit(self, visit_id):
-        return self.by_visit.search(visit_id)
-
-    def find_by_cost_range(self, low, high):
-        result = []
-        self.by_cost.inorder_keys_within_range(self.by_cost.root, low, high, result)
-        return result
-
-    def add_record(self, record):
-        visit_id = record["visit_id"]
-
-        if len(self.by_visit.search(visit_id)) > 0:
-            st.warning(f"Duplicate visit_id {visit_id}. Record rejected.")
-            return None
-
-        self.storage[visit_id] = record
-
-        self.by_patient.add(record["patient_id"], visit_id)
-        self.by_doctor.add(record["doctor_id"], visit_id)
-        self.by_cost.add(record["treatment_cost"], visit_id)
-        self.by_visit.add(visit_id, visit_id)
-
-        return record
-
-    def delete_record(self, visit_id):
-        record = self.storage.pop(visit_id, None)
-        if not record:
-            return None
-
-        self.by_patient.remove(record["patient_id"], visit_id)
-        self.by_doctor.remove(record["doctor_id"], visit_id)
-        self.by_cost.remove(record["treatment_cost"], visit_id)
-        self.by_visit.remove(visit_id, visit_id)
-
-        return record
-
-    def modify_record(self, visit_id, field, new_value):
-        record = self.storage.get(visit_id)
-        if not record:
-            st.warning(f"Visit {visit_id} not found.")
-            return False
-
-        old_value = record[field]
-        if old_value == new_value:
-            return record
-
-        if field == "patient_id":
-            self.by_patient.remove(old_value, visit_id)
-            self.by_patient.add(new_value, visit_id)
-        elif field == "doctor_id":
-            self.by_doctor.remove(old_value, visit_id)
-            self.by_doctor.add(new_value, visit_id)
-        elif field == "treatment_cost":
-            self.by_cost.remove(old_value, visit_id)
-            self.by_cost.add(new_value, visit_id)
-
-        record[field] = new_value
-
-        return record
-
-# GRAPH
-class Vertex:
-    # ... (Keep the original Vertex class content here) ...
-    def __init__(self, visit_id, element=None):
-        self.visit_id = visit_id
-        self.element = element
-        self.color = "white"
-        self.distance = float('inf')
-        self.predecessor = None
-        self.discovery_time = 0
-        self.finish_time = 0
-
-    def get_element(self):
-        return self.element
-
-    def __str__(self):
-        return f"Vertex(visit_id={self.visit_id})"
-
-class Edge:
-    # ... (Keep the original Edge class content here) ...
-    def __init__(self, origin, destination, element=None):
-        self.origin = origin
-        self.destination = destination
-        self.element = element
-
-    def endpoints(self):
-        return (self.origin, self.destination)
-
-    def opposite(self, vertex):
-        if vertex == self.origin:
-            return self.destination
-        elif vertex == self.destination:
-            return self.origin
-        else:
-            raise ValueError("Vertex not incident to this edge")
-
-    def get_element(self):
-        return self.element
-
-    def __str__(self):
-        return f"Edge({self.origin.visit_id} -> {self.destination.visit_id})"
-
-class Graph:
-    # ... (Keep the original Graph class content, especially BFS, DFS, find_path) ...
-    def __init__(self, directed=True):
-        self.directed = directed
-        self.vertices = {}
-        self.outgoing = {}
-        self.incoming = {}
-
-    def num_vertices(self):
-        return len(self.vertices)
-
-    def num_edges(self):
-        total = sum(len(edges) for edges in self.outgoing.values())
-        return total
-
-    def get_vertices(self):
-        return self.vertices.values()
-
-    def get_edges(self):
-        edges = []
-        for vertex_edges in self.outgoing.values():
-            edges.extend(vertex_edges.values())
-        return edges
-
-    def get_vertex(self, visit_id):
-        return self.vertices.get(visit_id)
-
-    def insert_vertex(self, visit_id, element=None):
-        if visit_id in self.vertices:
-            return self.vertices[visit_id]
-
-        v = Vertex(visit_id, element)
-        self.vertices[visit_id] = v
-        self.outgoing[v] = {}
-        self.incoming[v] = {}
-        return v
-
-    def insert_edge(self, u, v, element=None):
-        if isinstance(u, int):
-            if u not in self.vertices:
-                u = self.insert_vertex(u)
-            else:
-                u = self.vertices[u]
-
-        if isinstance(v, int):
-            if v not in self.vertices:
-                v = self.insert_vertex(v)
-            else:
-                v = self.vertices[v]
-
-        if v in self.outgoing[u]:
-            return self.outgoing[u][v]
-
-        e = Edge(u, v, element)
-        self.outgoing[u][v] = e
-        self.incoming[v][u] = e
-
-        return e
-
-    def outgoing_edges(self, v):
-        if isinstance(v, int):
-            v = self.vertices.get(v)
-        return self.outgoing.get(v, {})
-
-    def incoming_edges(self, v):
-        if isinstance(v, int):
-            v = self.vertices.get(v)
-        return self.incoming.get(v, {})
-
-    def BFS(self, start_visit_id):
-        for vertex in self.vertices.values():
-            vertex.color = "white"
-            vertex.distance = float('inf')
-            vertex.predecessor = None
-
-        start = self.vertices.get(start_visit_id)
-        if start is None:
-            return {}
-
-        start.color = "gray"
-        start.distance = 0
-        start.predecessor = None
-
-        queue = deque([start]) # Use deque for efficiency
-        distances = {start.visit_id: 0}
-
-        while queue:
-            u = queue.popleft()
-            for v in self.outgoing[u].keys():
-                if v.color == "white":
-                    v.color = "gray"
-                    v.distance = u.distance + 1
-                    v.predecessor = u
-                    distances[v.visit_id] = v.distance
-                    queue.append(v)
-            u.color = "black"
-
-        return distances
-
-    def find_path(self, start_visit_id, end_visit_id):
-        self.BFS(start_visit_id)
-
-        end = self.vertices.get(end_visit_id)
-        if end is None or end.distance == float('inf'):
-            return []
-
-        path = []
-        current = end
-        while current is not None:
-            path.append(current.visit_id)
-            current = current.predecessor
-
-        path.reverse()
-        return path
-
-# GRAPH MANAGER
-class GraphManager:
-    # ... (Keep the original GraphManager class content) ...
-    def __init__(self):
-        self.graph = Graph(directed=True)
-        self.storage = None
-
-    def build_from_records(self, storage, index_manager):
-        self.storage = storage
-
-        for visit_id, record in storage.items():
-            self.graph.insert_vertex(visit_id, record)
-
-        edges_created = 0
-
-        for visit_id, record in storage.items():
-            patient_id = record.get('patient_id')
-            current_doctor = record.get('doctor_id')
-            referral_doctor = record.get('referral_doctor')
-
-            if referral_doctor and referral_doctor != current_doctor:
-                patient_visits = index_manager.find_by_patient(patient_id)
-
-                for other_visit_id in patient_visits:
-                    if other_visit_id == visit_id:
-                        continue
-
-                    other_record = storage[other_visit_id]
-
-                    if other_record['doctor_id'] == referral_doctor:
-                        self.graph.insert_edge(
-                            visit_id,
-                            other_visit_id,
-                            element={
-                                'referral_doctor': referral_doctor,
-                                'original_doctor': current_doctor,
-                                'patient_id': patient_id
-                            }
-                        )
-                        edges_created += 1
-                        break
-        return self.graph.num_vertices(), edges_created
-
-    def find_referral_chain(self, visit_id):
-        vertex = self.graph.get_vertex(visit_id)
-        if vertex is None:
-            return []
-
-        chain = []
-        visited = set()
-        current = vertex
-
-        while current and current.visit_id not in visited:
-            chain.insert(0, current.visit_id)
-            visited.add(current.visit_id)
-
-            incoming = self.graph.incoming_edges(current)
-            if len(incoming) == 0:
-                break
-
-            predecessor = next(iter(incoming.keys()))
-            current = predecessor
-
-        return chain
-
-    def find_all_referrals_from(self, visit_id):
-        distances = self.graph.BFS(visit_id)
-        # Exclude the start node itself from the list of referrals
-        return [vid for vid in distances.keys() if vid != visit_id]
-
-    def find_patient_journey(self, patient_id):
-        if not self.storage:
-            return []
-
-        journey = []
-        for visit_id, record in self.storage.items():
-            if record['patient_id'] == patient_id:
-                journey.append({
-                    'visit_id': visit_id,
-                    'doctor_id': record['doctor_id'],
-                    'department': record['department'],
-                    'diagnosis': record['diagnosis'],
-                    'referral_doctor': record['referral_doctor']
-                })
-        # Sort by visit_id to approximate chronological order
-        return sorted(journey, key=lambda x: x['visit_id'])
-
-
-    def get_referral_statistics(self):
-        stats = {
-            'total_visits': self.graph.num_vertices(),
-            'total_referral_edges': self.graph.num_edges(),
-            'visits_that_led_to_referrals': 0,
-            'visits_that_were_referred': 0,
-            'max_referrals_from_one_visit': 0,
-            'max_incoming_referrals': 0,
-            'avg_referrals_per_visit': 0
-        }
-
-        total_out = 0
-
-        for vertex in self.graph.get_vertices():
-            out_deg = self.graph.outgoing_edges(vertex)
-            in_deg = self.graph.incoming_edges(vertex)
-
-            out_deg_count = len(out_deg)
-            in_deg_count = len(in_deg)
-
-            if out_deg_count > 0:
-                stats['visits_that_led_to_referrals'] += 1
-                stats['max_referrals_from_one_visit'] = max(
-                    stats['max_referrals_from_one_visit'], out_deg_count)
-
-            if in_deg_count > 0:
-                stats['visits_that_were_referred'] += 1
-                stats['max_incoming_referrals'] = max(
-                    stats['max_incoming_referrals'], in_deg_count)
-
-            total_out += out_deg_count
-
-        if stats['total_visits'] > 0:
-            stats['avg_referrals_per_visit'] = total_out / stats['total_visits']
-
-        return stats
-
-# --- STREAMLIT UI IMPLEMENTATION ---
-
-# Initialize session state for persistent objects
-if 'data_loaded' not in st.session_state:
-    st.session_state.data_loaded = False
-    st.session_state.data_storage = DataStorage("hospital_data.csv") # Assuming this CSV exists
-    st.session_state.index_manager = IndexManager()
-    st.session_state.graph_manager = GraphManager()
-
-st.title("🏥 Hospital Data Management & Referral Network Analyzer")
-st.sidebar.header("Configuration")
-
-# --- 1. Data Loading Section ---
-st.sidebar.subheader("Data Loading")
-csv_file = st.sidebar.file_uploader("Upload Hospital Visit Data (CSV)", type="csv")
-
-if csv_file is not None:
-    # Save the uploaded file to a temporary location to be read by DataStorage
-    # For simplicity, we assume the CSV is correctly formatted.
-    st.session_state.data_storage.path = csv_file.name
-    with open(csv_file.name, "wb") as f:
-        f.write(csv_file.getbuffer())
-
-    if st.sidebar.button("Load & Index Data"):
-        st.session_state.data_storage.load_data()
-        records = st.session_state.data_storage.get_all()
-        if records:
-            st.session_state.index_manager.build(records)
-            st.session_state.graph_manager.build_from_records(records, st.session_state.index_manager)
-            st.session_state.data_loaded = True
-            st.success("Data and Indexes are loaded and built!")
-            st.balloons()
-else:
-    st.sidebar.info("Please upload a CSV file.")
-
-# Check if data is loaded before proceeding
-if not st.session_state.data_loaded:
-    st.info("Upload and load data in the sidebar to begin.")
-else:
-    # --- 2. Main Interface Tabs ---
-    st.markdown("---")
-    tab1, tab2, tab3 = st.tabs(["📊 Data Overview & Search", "🛠️ CRUD Operations", "🔗 Referral Network Analysis"])
-
-    # --- TAB 1: Data Overview & Search ---
+import sys
+import os
+
+# Add the core directory to Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'core'))
+
+from storage import DataStorage, IndexManager
+from graph import GraphManager
+from query_engine import QueryEngine
+
+# Page configuration
+st.set_page_config(
+    page_title="Healthcare Data Management System",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS
+st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .stDataFrame {
+        width: 100%;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+@st.cache_resource
+def load_system():
+    """Load and initialize the entire system"""
+    csv_path = r"C:\Users\ASUS\OneDrive - National Center for Educational Technologies\Desktop\DSA files\patient_visits.csv"
+    
+    with st.spinner("Loading 1,000,000 records..."):
+        storage = DataStorage(csv_path)
+        storage.load_data()
+        
+        index_manager = IndexManager()
+        index_manager.build(storage.get_all())
+        
+        graph_manager = GraphManager()
+        graph_manager.build_from_records(storage.records, index_manager)
+        
+        query_engine = QueryEngine(storage, index_manager, graph_manager)
+    
+    return storage, index_manager, graph_manager, query_engine
+
+# Load system
+try:
+    storage, index_manager, graph_manager, query_engine = load_system()
+    system_loaded = True
+except Exception as e:
+    st.error(f"Error loading system: {e}")
+    system_loaded = False
+
+# Main header
+st.markdown('<div class="main-header">🏥 Healthcare Data Management System</div>', unsafe_allow_html=True)
+
+if not system_loaded:
+    st.stop()
+
+# Sidebar navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio(
+    "Select Operation",
+    ["Dashboard", "Search & Query", "Patient Journey", "Doctor Network", 
+     "Cost Analysis", "Referral Chain", "Record Management", "Graph Analysis"]
+)
+
+# Dashboard Page
+if page == "Dashboard":
+    st.header("📊 System Dashboard")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    records = storage.records
+    
+    with col1:
+        st.metric("Total Records", f"{len(records):,}")
+    
+    with col2:
+        unique_patients = len(set(r['patient_id'] for r in records.values()))
+        st.metric("Unique Patients", f"{unique_patients:,}")
+    
+    with col3:
+        unique_doctors = len(set(r['doctor_id'] for r in records.values()))
+        st.metric("Unique Doctors", f"{unique_doctors:,}")
+    
+    with col4:
+        total_cost = sum(r['treatment_cost'] for r in records.values())
+        st.metric("Total Treatment Cost", f"${total_cost:,.2f}")
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Department Distribution")
+        dept_counts = {}
+        for r in records.values():
+            dept = r['department']
+            dept_counts[dept] = dept_counts.get(dept, 0) + 1
+        st.bar_chart(dept_counts)
+    
+    with col2:
+        st.subheader("Recent Records")
+        recent = sorted(records.values(), key=lambda x: x['visit_id'], reverse=True)[:10]
+        st.dataframe(recent, use_container_width=True)
+
+# Search & Query Page
+elif page == "Search & Query":
+    st.header("🔍 Search & Query")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["By Patient", "By Doctor", "By Cost", "By Visit ID"])
+    
     with tab1:
-        st.header("Data Overview")
-        records = st.session_state.data_storage.get_all()
-        df = pd.DataFrame(list(records.values()))
-        st.write(f"Total Records Loaded: **{len(records)}**")
-        st.dataframe(df.head(10))
-
-        st.header("Search & AVL Index Lookups")
-        search_type = st.radio("Search By:", ("Patient ID", "Doctor ID", "Cost Range"))
-
-        if search_type == "Patient ID":
-            p_id = st.number_input("Enter Patient ID:", min_value=1, format="%d")
-            if st.button("Find Visits by Patient"):
-                visit_ids = st.session_state.index_manager.find_by_patient(p_id)
-                if visit_ids:
-                    st.success(f"Found {len(visit_ids)} visits.")
-                    search_results = [records[v_id] for v_id in visit_ids if v_id in records]
-                    st.dataframe(pd.DataFrame(search_results))
-                else:
-                    st.warning("No visits found for this patient.")
-
-        elif search_type == "Doctor ID":
-            d_id = st.number_input("Enter Doctor ID:", min_value=1, format="%d")
-            if st.button("Find Visits by Doctor"):
-                visit_ids = st.session_state.index_manager.find_by_doctor(d_id)
-                if visit_ids:
-                    st.success(f"Found {len(visit_ids)} visits.")
-                    search_results = [records[v_id] for v_id in visit_ids if v_id in records]
-                    st.dataframe(pd.DataFrame(search_results))
-                else:
-                    st.warning("No visits found for this doctor.")
-
-        elif search_type == "Cost Range":
-            col1, col2 = st.columns(2)
-            low = col1.number_input("Min Cost:", min_value=0.0, step=100.0)
-            high = col2.number_input("Max Cost:", min_value=0.0, step=100.0, value=5000.0)
-            if st.button("Find Visits by Cost Range"):
-                visit_ids = st.session_state.index_manager.find_by_cost_range(low, high)
-                if visit_ids:
-                    st.success(f"Found {len(visit_ids)} visits in range ${low} - ${high}.")
-                    search_results = [records[v_id] for v_id in visit_ids if v_id in records]
-                    st.dataframe(pd.DataFrame(search_results))
-                else:
-                    st.warning("No visits found in this cost range.")
-
-    # --- TAB 2: CRUD Operations ---
-    with tab2:
-        st.header("CRUD Operations")
-        operation = st.selectbox("Select Operation:", ["Add Record", "Modify Record", "Delete Record"])
-
-        if operation == "Add Record":
-            st.subheader("➕ Add New Visit Record")
-            new_record = {}
-            new_record['visit_id'] = st.number_input("Visit ID:", min_value=1, format="%d", key='add_vid')
-            new_record['patient_id'] = st.number_input("Patient ID:", min_value=1, format="%d", key='add_pid')
-            new_record['doctor_id'] = st.number_input("Doctor ID:", min_value=1, format="%d", key='add_did')
-            new_record['treatment_cost'] = st.number_input("Cost:", min_value=0.0, key='add_cost')
-            new_record['department'] = st.text_input("Department:", key='add_dept')
-            new_record['diagnosis'] = st.text_input("Diagnosis:", key='add_diag')
-            new_record['referral_doctor'] = st.number_input("Referral Doctor ID (0 for none):", min_value=0, format="%d", key='add_refdoc')
-            if new_record['referral_doctor'] == 0:
-                 new_record['referral_doctor'] = None
-            # Add placeholders for other fields (number_of_visits, risk_score, outcome_score)
-            new_record['number_of_visits'] = 1
-            new_record['risk_score'] = 0.5
-            new_record['outcome_score'] = 0.5
-
-
-            if st.button("Add Record to System"):
-                if new_record['visit_id'] in st.session_state.data_storage.get_all():
-                    st.error(f"Visit ID {new_record['visit_id']} already exists. Please choose a unique ID.")
-                else:
-                    added_record = st.session_state.index_manager.add_record(new_record)
-                    if added_record:
-                        st.success(f"Record for Visit ID {added_record['visit_id']} added successfully.")
-                        # Rebuild graph to include new node/edge
-                        st.session_state.graph_manager.build_from_records(st.session_state.data_storage.get_all(), st.session_state.index_manager)
-                        st.session_state.data_loaded = True # Force re-render
-
-        elif operation == "Modify Record":
-            st.subheader("📝 Modify Existing Record")
-            mod_vid = st.number_input("Visit ID to Modify:", min_value=1, format="%d", key='mod_vid')
-            record_to_mod = st.session_state.data_storage.get_all().get(mod_vid)
-
-            if record_to_mod:
-                st.write("Current Record:")
-                st.json(record_to_mod)
-
-                field = st.selectbox("Field to Modify:", ["patient_id", "doctor_id", "treatment_cost", "diagnosis", "referral_doctor"], key='mod_field')
-                if field in ["patient_id", "doctor_id"]:
-                    new_val = st.number_input(f"New Value for {field}:", min_value=1, format="%d", key='mod_val_int')
-                elif field == "treatment_cost":
-                    new_val = st.number_input(f"New Value for {field}:", min_value=0.0, key='mod_val_float')
-                elif field == "referral_doctor":
-                    new_val = st.number_input(f"New Value for {field} (0 for None):", min_value=0, format="%d", key='mod_val_refdoc')
-                    if new_val == 0:
-                        new_val = None
-                else:
-                    new_val = st.text_input(f"New Value for {field}:", key='mod_val_text', value=str(record_to_mod.get(field, '')))
-
-                if st.button("Apply Modification"):
-                    # Type casting for modification must be correct!
-                    if field in ["patient_id", "doctor_id"]:
-                        new_val = int(new_val)
-                    elif field == "treatment_cost":
-                        new_val = float(new_val)
-
-                    modified = st.session_state.index_manager.modify_record(mod_vid, field, new_val)
-                    if modified:
-                        st.success(f"Record {mod_vid} modified successfully.")
-                        # Rebuild graph as keys (patient_id, doctor_id) might have changed
-                        st.session_state.graph_manager.build_from_records(st.session_state.data_storage.get_all(), st.session_state.index_manager)
-                        st.session_state.data_loaded = True
-
+        st.subheader("Search by Patient ID")
+        patient_id = st.number_input("Enter Patient ID", min_value=1, value=1, step=1)
+        
+        if st.button("Search Patient", key="search_patient"):
+            visit_ids = index_manager.find_by_patient(patient_id)
+            if visit_ids:
+                st.success(f"Found {len(visit_ids)} visits for Patient {patient_id}")
+                results = [storage.records[vid] for vid in visit_ids]
+                st.dataframe(results, use_container_width=True)
             else:
-                st.warning("Visit ID not found.")
-
-        elif operation == "Delete Record":
-            st.subheader("🗑️ Delete Existing Record")
-            del_vid = st.number_input("Visit ID to Delete:", min_value=1, format="%d", key='del_vid')
-            if st.button("Delete Record PERMANENTLY"):
-                deleted = st.session_state.index_manager.delete_record(del_vid)
-                if deleted:
-                    st.success(f"Record for Visit ID {del_vid} deleted successfully.")
-                    # Rebuild graph to remove the node
-                    st.session_state.graph_manager.build_from_records(st.session_state.data_storage.get_all(), st.session_state.index_manager)
-                    st.session_state.data_loaded = True
-                else:
-                    st.error(f"Visit ID {del_vid} not found.")
-
-    # --- TAB 3: Referral Network Analysis ---
+                st.warning(f"No visits found for Patient {patient_id}")
+    
+    with tab2:
+        st.subheader("Search by Doctor ID")
+        doctor_id = st.number_input("Enter Doctor ID", min_value=1, value=1, step=1)
+        
+        if st.button("Search Doctor", key="search_doctor"):
+            visit_ids = index_manager.find_by_doctor(doctor_id)
+            if visit_ids:
+                st.success(f"Found {len(visit_ids)} visits for Doctor {doctor_id}")
+                results = [storage.records[vid] for vid in visit_ids]
+                st.dataframe(results, use_container_width=True)
+            else:
+                st.warning(f"No visits found for Doctor {doctor_id}")
+    
     with tab3:
-        st.header("Referral Network Analysis (Graph Manager)")
+        st.subheader("Search by Cost Range")
+        col1, col2 = st.columns(2)
+        with col1:
+            low_cost = st.number_input("Minimum Cost", min_value=0.0, value=1000.0, step=100.0)
+        with col2:
+            high_cost = st.number_input("Maximum Cost", min_value=0.0, value=5000.0, step=100.0)
+        
+        if st.button("Search by Cost Range", key="search_cost"):
+            results = query_engine.get_visits_by_cost_range(low_cost, high_cost)
+            if results:
+                st.success(f"Found {len(results)} visits in cost range ${low_cost:,.2f} - ${high_cost:,.2f}")
+                st.dataframe(results, use_container_width=True)
+            else:
+                st.warning(f"No visits found in cost range ${low_cost:,.2f} - ${high_cost:,.2f}")
+    
+    with tab4:
+        st.subheader("Search by Visit ID")
+        visit_id = st.number_input("Enter Visit ID", min_value=1, value=1, step=1)
+        
+        if st.button("Search Visit", key="search_visit"):
+            visit_ids = index_manager.find_by_visit(visit_id)
+            if visit_ids:
+                record = storage.records[visit_id]
+                st.success(f"Found Visit {visit_id}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Patient ID:** {record['patient_id']}")
+                    st.write(f"**Doctor ID:** {record['doctor_id']}")
+                    st.write(f"**Department:** {record['department']}")
+                    st.write(f"**Diagnosis:** {record['diagnosis']}")
+                
+                with col2:
+                    st.write(f"**Treatment Cost:** ${record['treatment_cost']:,.2f}")
+                    st.write(f"**Number of Visits:** {record['number_of_visits']}")
+                    st.write(f"**Risk Score:** {record['risk_score']}")
+                    st.write(f"**Outcome Score:** {record['outcome_score']}")
+                
+                if record.get('referral_doctor'):
+                    st.info(f"**Referral Doctor:** {record['referral_doctor']}")
+            else:
+                st.warning(f"Visit {visit_id} not found")
 
-        st.subheader("Network Statistics")
-        stats = st.session_state.graph_manager.get_referral_statistics()
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Visits (Nodes)", stats['total_visits'])
-        col2.metric("Total Referrals (Edges)", stats['total_referral_edges'])
-        col3.metric("Avg. Referrals / Visit", f"{stats['avg_referrals_per_visit']:.2f}")
+# Patient Journey Page
+elif page == "Patient Journey":
+    st.header("🚶 Patient Journey Analysis")
+    
+    patient_id = st.number_input("Enter Patient ID", min_value=1, value=213, step=1)
+    
+    if st.button("Analyze Patient Journey"):
+        journey = query_engine.get_patient_journey(patient_id)
+        
+        if journey:
+            st.success(f"Found {len(journey)} visits in patient journey")
+            
+            st.subheader("Journey Timeline")
+            for i, visit in enumerate(journey, 1):
+                with st.expander(f"Visit {i} - ID: {visit['visit_id']}"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.write(f"**Doctor:** {visit['doctor_id']}")
+                    with col2:
+                        st.write(f"**Department:** {visit['department']}")
+                    with col3:
+                        st.write(f"**Diagnosis:** {visit['diagnosis']}")
+                    
+                    if visit.get('referral_doctor'):
+                        st.info(f"Referred to Doctor: {visit['referral_doctor']}")
+            
+            st.subheader("Journey Summary")
+            departments = [v['department'] for v in journey]
+            st.write(f"**Departments Visited:** {', '.join(set(departments))}")
+            st.write(f"**Total Visits:** {len(journey)}")
+            
+            st.dataframe(journey, use_container_width=True)
+        else:
+            st.warning(f"No journey found for Patient {patient_id}")
 
-        st.subheader("Patient Journey & Referral Chains")
-        analysis_type = st.radio("Select Analysis:", ("Patient Journey", "Referral Chain to Visit", "Referrals FROM Visit", "Shortest Path"))
+# Doctor Network Page
+elif page == "Doctor Network":
+    st.header("👨‍⚕️ Doctor Referral Network")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        doctor_id = st.number_input("Enter Doctor ID", min_value=1, value=47, step=1)
+    
+    with col2:
+        depth = st.slider("Network Depth", min_value=1, max_value=3, value=1)
+    
+    if st.button("Analyze Network"):
+        network = query_engine.get_doctor_referral_network(doctor_id, depth)
+        
+        if network:
+            st.success(f"Doctor {doctor_id} has {len(network)} doctors in referral network (depth={depth})")
+            
+            st.subheader("Network Doctors")
+            network_list = sorted(list(network))
+            
+            cols = st.columns(5)
+            for i, doc_id in enumerate(network_list):
+                with cols[i % 5]:
+                    st.metric(f"Doctor {doc_id}", "")
+            
+            st.divider()
+            
+            st.subheader("Referral Details")
+            for doc_id in network_list:
+                referral_count = sum(1 for r in storage.records.values() 
+                                   if r['doctor_id'] == doctor_id and r.get('referral_doctor') == doc_id)
+                st.write(f"**Doctor {doc_id}:** {referral_count} referrals")
+        else:
+            st.info(f"Doctor {doctor_id} has no referrals in the network")
 
-        if analysis_type == "Patient Journey":
-            p_id_j = st.number_input("Enter Patient ID for Journey:", min_value=1, format="%d", key='j_pid')
-            if st.button("Show Patient Journey"):
-                journey = st.session_state.graph_manager.find_patient_journey(p_id_j)
-                if journey:
-                    st.success(f"Found {len(journey)} steps in Patient {p_id_j}'s journey.")
-                    st.dataframe(pd.DataFrame(journey))
+# Cost Analysis Page
+elif page == "Cost Analysis":
+    st.header("💰 Cost Analysis")
+    
+    records = storage.records.values()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        avg_cost = sum(r['treatment_cost'] for r in records) / len(records)
+        st.metric("Average Cost", f"${avg_cost:,.2f}")
+    
+    with col2:
+        max_cost = max(r['treatment_cost'] for r in records)
+        st.metric("Maximum Cost", f"${max_cost:,.2f}")
+    
+    with col3:
+        min_cost = min(r['treatment_cost'] for r in records)
+        st.metric("Minimum Cost", f"${min_cost:,.2f}")
+    
+    st.divider()
+    
+    st.subheader("Cost Distribution by Department")
+    dept_costs = {}
+    dept_counts = {}
+    
+    for r in records:
+        dept = r['department']
+        if dept not in dept_costs:
+            dept_costs[dept] = 0
+            dept_counts[dept] = 0
+        dept_costs[dept] += r['treatment_cost']
+        dept_counts[dept] += 1
+    
+    dept_avg = {dept: dept_costs[dept] / dept_counts[dept] for dept in dept_costs}
+    
+    st.bar_chart(dept_avg)
+    
+    st.subheader("Department Statistics")
+    for dept in sorted(dept_costs.keys()):
+        with st.expander(f"{dept}"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Cost", f"${dept_costs[dept]:,.2f}")
+            with col2:
+                st.metric("Average Cost", f"${dept_avg[dept]:,.2f}")
+            with col3:
+                st.metric("Visit Count", f"{dept_counts[dept]:,}")
+
+# Referral Chain Page
+elif page == "Referral Chain":
+    st.header("🔗 Referral Chain Analysis")
+    
+    visit_id = st.number_input("Enter Visit ID", min_value=1, value=1, step=1)
+    
+    if st.button("Trace Referral Chain"):
+        chain = query_engine.get_referral_chain(visit_id)
+        
+        if chain:
+            st.success(f"Found referral chain with {len(chain)} visits")
+            
+            st.subheader("Chain Sequence")
+            for i, vid in enumerate(chain, 1):
+                record = storage.records[vid]
+                with st.expander(f"Step {i} - Visit {vid}"):
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.write(f"**Patient:** {record['patient_id']}")
+                    with col2:
+                        st.write(f"**Doctor:** {record['doctor_id']}")
+                    with col3:
+                        st.write(f"**Department:** {record['department']}")
+                    with col4:
+                        st.write(f"**Diagnosis:** {record['diagnosis']}")
+                    
+                    if record.get('referral_doctor'):
+                        st.info(f"Referred to: Doctor {record['referral_doctor']}")
+            
+            st.divider()
+            st.write("**Chain Path:**")
+            st.write(" → ".join([f"Visit {vid}" for vid in chain]))
+        else:
+            st.warning(f"No referral chain found for Visit {visit_id}")
+
+# Record Management Page
+elif page == "Record Management":
+    st.header("📝 Record Management")
+    
+    tab1, tab2, tab3 = st.tabs(["Add Record", "Modify Record", "Delete Record"])
+    
+    with tab1:
+        st.subheader("Add New Record")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_visit_id = st.number_input("Visit ID", min_value=1, value=len(storage.records)+1, step=1)
+            new_patient_id = st.number_input("Patient ID", min_value=1, value=1, step=1, key="add_patient")
+            new_doctor_id = st.number_input("Doctor ID", min_value=1, value=1, step=1, key="add_doctor")
+            new_department = st.selectbox("Department", ["Cardiology", "Neurology", "Pediatrics", "Oncology", "Orthopedics"])
+            new_diagnosis = st.text_input("Diagnosis", "Hypertension")
+        
+        with col2:
+            new_cost = st.number_input("Treatment Cost", min_value=0.0, value=1000.0, step=100.0)
+            new_visits = st.number_input("Number of Visits", min_value=1, value=1, step=1)
+            new_risk = st.slider("Risk Score", 0.0, 1.0, 0.5, 0.01)
+            new_referral = st.number_input("Referral Doctor (0 for none)", min_value=0, value=0, step=1)
+            new_outcome = st.number_input("Outcome Score", min_value=0.0, max_value=100.0, value=50.0, step=0.1)
+        
+        if st.button("Add Record"):
+            new_record = {
+                'visit_id': new_visit_id,
+                'patient_id': new_patient_id,
+                'doctor_id': new_doctor_id,
+                'department': new_department,
+                'diagnosis': new_diagnosis,
+                'treatment_cost': new_cost,
+                'number_of_visits': new_visits,
+                'risk_score': new_risk,
+                'referral_doctor': new_referral if new_referral > 0 else None,
+                'outcome_score': new_outcome
+            }
+            
+            result = index_manager.add_record(new_record)
+            if result:
+                st.success(f"Successfully added Visit {new_visit_id}")
+                st.json(result)
+            else:
+                st.error("Failed to add record")
+    
+    with tab2:
+        st.subheader("Modify Existing Record")
+        
+        modify_visit_id = st.number_input("Visit ID to Modify", min_value=1, value=1, step=1)
+        
+        if modify_visit_id in storage.records:
+            record = storage.records[modify_visit_id]
+            
+            st.info("Current Record:")
+            st.json(record)
+            
+            field = st.selectbox("Field to Modify", 
+                               ["patient_id", "doctor_id", "department", "diagnosis", 
+                                "treatment_cost", "number_of_visits", "risk_score", 
+                                "referral_doctor", "outcome_score"])
+            
+            new_value = st.text_input(f"New value for {field}", str(record[field]))
+            
+            if st.button("Modify Record"):
+                result = index_manager.modify_record(modify_visit_id, field, new_value)
+                if result:
+                    st.success(f"Successfully modified Visit {modify_visit_id}")
+                    st.json(result)
                 else:
-                    st.warning("No journey found for this patient.")
-
-        elif analysis_type == "Referral Chain to Visit":
-            v_id_c = st.number_input("Enter Visit ID to trace chain back to:", min_value=1, format="%d", key='c_vid')
-            if st.button("Trace Referral Chain"):
-                chain = st.session_state.graph_manager.find_referral_chain(v_id_c)
-                if chain:
-                    st.success(f"Chain found (Length: {len(chain)}):")
-                    st.code(" -> ".join(map(str, chain)))
+                    st.error("Failed to modify record")
+    
+    with tab3:
+        st.subheader("Delete Record")
+        
+        delete_visit_id = st.number_input("Visit ID to Delete", min_value=1, value=1, step=1)
+        
+        if delete_visit_id in storage.records:
+            st.warning("Record to be deleted:")
+            st.json(storage.records[delete_visit_id])
+            
+            if st.button("Delete Record", type="primary"):
+                result = index_manager.delete_record(delete_visit_id)
+                if result:
+                    st.success(f"Successfully deleted Visit {delete_visit_id}")
                 else:
-                    st.warning("No referral chain found for this visit.")
+                    st.error("Failed to delete record")
+        else:
+            st.info(f"Visit {delete_visit_id} not found")
 
-        elif analysis_type == "Referrals FROM Visit":
-            v_id_r = st.number_input("Enter Visit ID to find all subsequent referrals:", min_value=1, format="%d", key='r_vid')
-            if st.button("Find All Referred Visits"):
-                referred_visits = st.session_state.graph_manager.find_all_referrals_from(v_id_r)
-                if referred_visits:
-                    st.success(f"This visit led to {len(referred_visits)} subsequent referrals (direct/indirect).")
-                    st.dataframe(pd.DataFrame([st.session_state.data_storage.get_all()[v] for v in referred_visits]))
-                else:
-                    st.warning("This visit did not lead to any subsequent recorded referrals.")
+# Graph Analysis Page
+elif page == "Graph Analysis":
+    st.header("📈 Graph Analysis")
+    
+    tab1, tab2, tab3 = st.tabs(["BFS Analysis", "DFS Analysis", "Path Finding"])
+    
+    with tab1:
+        st.subheader("Breadth-First Search (BFS)")
+        start_visit = st.number_input("Start Visit ID", min_value=1, value=1, step=1)
+        
+        if st.button("Run BFS"):
+            distances = graph_manager.graph.BFS(start_visit)
+            if distances:
+                st.success(f"BFS completed from Visit {start_visit}")
+                st.write(f"**Reachable Visits:** {len(distances)}")
+                
+                if len(distances) > 1:
+                    st.subheader("Distance Distribution")
+                    dist_counts = {}
+                    for d in distances.values():
+                        dist_counts[d] = dist_counts.get(d, 0) + 1
+                    st.bar_chart(dist_counts)
+                    
+                    st.subheader("Sample Distances")
+                    sample = dict(list(distances.items())[:20])
+                    st.json(sample)
+            else:
+                st.warning(f"Visit {start_visit} not found in graph")
+    
+    with tab2:
+        st.subheader("Depth-First Search (DFS)")
+        
+        if st.button("Run DFS"):
+            times = graph_manager.graph.DFS()
+            st.success("DFS completed on entire graph")
+            st.write(f"**Vertices Analyzed:** {len(times)}")
+            
+            st.subheader("Sample Discovery/Finish Times")
+            sample = dict(list(times.items())[:20])
+            st.json(sample)
+    
+    with tab3:
+        st.subheader("Find Path Between Visits")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            path_start = st.number_input("Start Visit", min_value=1, value=1, step=1)
+        with col2:
+            path_end = st.number_input("End Visit", min_value=1, value=10, step=1)
+        
+        if st.button("Find Path"):
+            path = graph_manager.graph.find_path(path_start, path_end)
+            
+            if path:
+                st.success(f"Path found with {len(path)} visits")
+                st.write("**Path:**")
+                st.write(" → ".join([f"Visit {vid}" for vid in path]))
+                
+                st.subheader("Path Details")
+                for vid in path:
+                    if vid in storage.records:
+                        record = storage.records[vid]
+                        st.write(f"**Visit {vid}:** Patient {record['patient_id']}, "
+                               f"Doctor {record['doctor_id']}, "
+                               f"{record['department']} - {record['diagnosis']}")
+            else:
+                st.warning(f"No path found between Visit {path_start} and Visit {path_end}")
 
-        elif analysis_type == "Shortest Path":
-            col_sp1, col_sp2 = st.columns(2)
-            start_v_id = col_sp1.number_input("Start Visit ID:", min_value=1, format="%d", key='sp_start')
-            end_v_id = col_sp2.number_input("End Visit ID:", min_value=1, format="%d", key='sp_end')
-            if st.button("Find Shortest Referral Path"):
-                path = st.session_state.graph_manager.graph.find_path(start_v_id, end_v_id)
-                if path:
-                    st.success(f"Shortest path found (Length: {len(path)} visits):")
-                    st.code(" -> ".join(map(str, path)))
-                else:
-                    st.warning("No path found between these two visits.")
-
-#streamlit run app.py
+# Footer
+st.divider()
+st.markdown("""
+    <div style='text-align: center; color: gray; padding: 1rem;'>
+        Healthcare Data Management System | Built with Streamlit | 1M Records
+    </div>
+""", unsafe_allow_html=True)
