@@ -1,0 +1,322 @@
+import streamlit as st
+import pandas as pd
+from io import StringIO
+
+# Import your existing classes (make sure they're in the same directory)
+# from your_file import DataStorage, IndexManager, GraphManager
+
+# For this demo, I'll include simplified versions of your classes
+# Replace this with: from your_file import AVLTree, IndexManager
+
+class AVLNode:
+    def __init__(self, key, record_ids):
+        self.key = key
+        self.record_ids = record_ids
+        self.height = 1
+        self.left = None
+        self.right = None
+
+class AVLTree:
+    def __init__(self):
+        self.root = None
+
+    def get_height(self, node):
+        return node.height if node else 0
+
+    def get_balance(self, node):
+        return self.get_height(node.left) - self.get_height(node.right)
+
+    def update_height(self, node):
+        node.height = 1 + max(self.get_height(node.left), self.get_height(node.right))
+
+    def rotate_left(self, x):
+        y = x.right
+        T2 = y.left
+        y.left = x
+        x.right = T2
+        self.update_height(x)
+        self.update_height(y)
+        return y
+
+    def rotate_right(self, x):
+        y = x.left
+        T3 = y.right
+        y.right = x
+        x.left = T3
+        self.update_height(x)
+        self.update_height(y)
+        return y
+
+    def insert(self, node, key, record_id):
+        if not node:
+            return AVLNode(key, [record_id])
+
+        if key < node.key:
+            node.left = self.insert(node.left, key, record_id)
+        elif key > node.key:
+            node.right = self.insert(node.right, key, record_id)
+        else:
+            node.record_ids.append(record_id)
+            return node
+
+        self.update_height(node)
+        balance = self.get_balance(node)
+
+        if balance > 1 and key < node.left.key:
+            return self.rotate_right(node)
+        if balance < -1 and key > node.right.key:
+            return self.rotate_left(node)
+        if balance > 1 and key > node.left.key:
+            node.left = self.rotate_left(node.left)
+            return self.rotate_right(node)
+        if balance < -1 and key < node.right.key:
+            node.right = self.rotate_right(node.right)
+            return self.rotate_left(node)
+
+        return node
+
+    def add(self, key, record_id):
+        self.root = self.insert(self.root, key, record_id)
+
+    def search(self, key):
+        node = self.root
+        while node:
+            if key < node.key:
+                node = node.left
+            elif key > node.key:
+                node = node.right
+            else:
+                return list(node.record_ids)
+        return []
+
+class IndexManager:
+    def __init__(self):
+        self.by_patient = AVLTree()
+        self.by_doctor = AVLTree()
+        self.by_cost = AVLTree()
+        self.storage = {}
+
+    def build(self, df):
+        self.storage = {}
+        for _, row in df.iterrows():
+            visit_id = int(row['visit_id'])
+            record = row.to_dict()
+            self.storage[visit_id] = record
+            self.by_patient.add(int(row['patient_id']), visit_id)
+            self.by_doctor.add(int(row['doctor_id']), visit_id)
+            self.by_cost.add(float(row['treatment_cost']), visit_id)
+
+    def find_by_patient(self, patient_id):
+        return self.by_patient.search(patient_id)
+
+    def find_by_doctor(self, doctor_id):
+        return self.by_doctor.search(doctor_id)
+
+    def find_by_cost(self, cost):
+        return self.by_cost.search(cost)
+
+
+# Streamlit App Configuration
+st.set_page_config(
+    page_title="Healthcare Data System",
+    page_icon="🏥",
+    layout="wide"
+)
+
+# Initialize session state
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
+    st.session_state.df = None
+    st.session_state.index_manager = None
+
+# Header
+st.title("🏥 Healthcare Data Management System")
+st.markdown("### AVL Tree-based Indexing with Graph Analysis")
+st.divider()
+
+# Sidebar for file upload
+with st.sidebar:
+    st.header("📁 Data Upload")
+    uploaded_file = st.file_uploader("Choose a CSV file", type=['csv'])
+    
+    if uploaded_file is not None:
+        try:
+            # Read CSV
+            df = pd.read_csv(uploaded_file)
+            
+            # Validate required columns
+            required_cols = ['visit_id', 'patient_id', 'doctor_id', 'department', 
+                           'diagnosis', 'treatment_cost']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            
+            if missing_cols:
+                st.error(f"Missing columns: {', '.join(missing_cols)}")
+            else:
+                # Build indexes
+                index_manager = IndexManager()
+                index_manager.build(df)
+                
+                # Store in session state
+                st.session_state.df = df
+                st.session_state.index_manager = index_manager
+                st.session_state.data_loaded = True
+                
+                st.success(f"✅ Loaded {len(df)} records!")
+                st.info(f"📊 {df['patient_id'].nunique()} unique patients")
+                st.info(f"👨‍⚕️ {df['doctor_id'].nunique()} unique doctors")
+                
+        except Exception as e:
+            st.error(f"Error loading file: {str(e)}")
+    
+    st.divider()
+    st.markdown("### Expected Columns:")
+    st.text("• visit_id\n• patient_id\n• doctor_id\n• department\n• diagnosis\n• treatment_cost\n• risk_score (optional)\n• outcome_score (optional)")
+
+# Main content
+if not st.session_state.data_loaded:
+    st.info("👈 Please upload a CSV file to get started")
+    st.markdown("""
+    ### How to use:
+    1. Upload your `patient_visits.csv` file using the sidebar
+    2. View statistics and browse all records
+    3. Use AVL tree indexing for fast searches
+    """)
+else:
+    df = st.session_state.df
+    index_manager = st.session_state.index_manager
+    
+    # Statistics cards
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Visits", len(df))
+    
+    with col2:
+        st.metric("Unique Patients", df['patient_id'].nunique())
+    
+    with col3:
+        st.metric("Unique Doctors", df['doctor_id'].nunique())
+    
+    with col4:
+        avg_cost = df['treatment_cost'].mean()
+        st.metric("Avg Cost", f"${avg_cost:,.2f}")
+    
+    st.divider()
+    
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["📊 Overview", "🔍 AVL Search", "📈 Analytics"])
+    
+    with tab1:
+        st.subheader("All Records")
+        
+        # Display options
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            search_filter = st.text_input("Filter table (any column):", "")
+        with col2:
+            rows_to_show = st.selectbox("Rows to display:", [10, 25, 50, 100, "All"])
+        
+        # Filter dataframe
+        if search_filter:
+            mask = df.astype(str).apply(lambda x: x.str.contains(search_filter, case=False)).any(axis=1)
+            filtered_df = df[mask]
+        else:
+            filtered_df = df
+        
+        # Display dataframe
+        if rows_to_show == "All":
+            st.dataframe(filtered_df, use_container_width=True, height=400)
+        else:
+            st.dataframe(filtered_df.head(rows_to_show), use_container_width=True)
+        
+        st.caption(f"Showing {len(filtered_df)} records")
+    
+    with tab2:
+        st.subheader("AVL Tree Search (O(log n) performance)")
+        
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            search_type = st.selectbox(
+                "Search by:",
+                ["Patient ID", "Doctor ID", "Treatment Cost"]
+            )
+        
+        with col2:
+            if search_type == "Treatment Cost":
+                search_value = st.number_input("Enter exact cost:", min_value=0.0, step=0.01)
+            else:
+                search_value = st.number_input(f"Enter {search_type}:", min_value=1, step=1)
+        
+        if st.button("🔍 Search", type="primary"):
+            try:
+                if search_type == "Patient ID":
+                    visit_ids = index_manager.find_by_patient(int(search_value))
+                elif search_type == "Doctor ID":
+                    visit_ids = index_manager.find_by_doctor(int(search_value))
+                else:
+                    visit_ids = index_manager.find_by_cost(float(search_value))
+                
+                if visit_ids:
+                    st.success(f"Found {len(visit_ids)} visit(s)")
+                    
+                    # Get records
+                    results = [index_manager.storage[vid] for vid in visit_ids]
+                    results_df = pd.DataFrame(results)
+                    
+                    st.dataframe(results_df, use_container_width=True)
+                    
+                    # Show some statistics
+                    if len(results) > 1:
+                        st.markdown("#### Summary Statistics:")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Cost", f"${results_df['treatment_cost'].sum():,.2f}")
+                        with col2:
+                            st.metric("Avg Cost", f"${results_df['treatment_cost'].mean():,.2f}")
+                        with col3:
+                            if 'risk_score' in results_df.columns:
+                                st.metric("Avg Risk", f"{results_df['risk_score'].mean():.2f}")
+                else:
+                    st.warning(f"No records found for {search_type}: {search_value}")
+            
+            except Exception as e:
+                st.error(f"Search error: {str(e)}")
+    
+    with tab3:
+        st.subheader("Data Analytics")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Top Departments by Visits")
+            dept_counts = df['department'].value_counts().head(10)
+            st.bar_chart(dept_counts)
+        
+        with col2:
+            st.markdown("#### Top Diagnoses")
+            diag_counts = df['diagnosis'].value_counts().head(10)
+            st.bar_chart(diag_counts)
+        
+        if 'risk_score' in df.columns:
+            st.markdown("#### Risk Score Distribution")
+            st.bar_chart(df['risk_score'].value_counts().sort_index())
+        
+        # Department statistics
+        st.markdown("#### Department Statistics")
+        dept_stats = df.groupby('department').agg({
+            'visit_id': 'count',
+            'treatment_cost': ['mean', 'sum'],
+            'patient_id': 'nunique'
+        }).round(2)
+        dept_stats.columns = ['Total Visits', 'Avg Cost', 'Total Cost', 'Unique Patients']
+        st.dataframe(dept_stats, use_container_width=True)
+
+# Footer
+st.divider()
+st.caption("Built with AVL Trees for efficient O(log n) search performance")
+
+
+
+#running via terminal
+#by writing streamlit run app.py where app.py is the UI file it opens the page in browser
