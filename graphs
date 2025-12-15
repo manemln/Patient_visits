@@ -126,7 +126,6 @@ class Graph:
         return times
 
     # ---- Pathfinding ----
-
     def find_path(self, start_visit_id, end_visit_id):
         self.BFS(start_visit_id)
         end = self.vertices.get(end_visit_id)
@@ -157,6 +156,8 @@ class Graph:
             edges.extend(vertex_edges.values())
         return edges
 
+
+#generate data check whether or not works put in the slide
     def strongly_connected_components(self):
         times = self.DFS()
         gt = self.transpose()
@@ -244,43 +245,8 @@ class GraphManager:
                 })
         return sorted(journey, key=lambda x: x['visit_id'])
 
-    def find_complete_referral_chain(self, visit_id):
-        """Find entire referral chain (both forward and backward)"""
-        if visit_id not in self.graph.vertices:
-            return []
-        
-        # Find all visits in the chain (backward traversal)
-        chain = []
-        visited = set()
-        current = self.graph.vertices[visit_id]
-        
-        # Go backward to find start
-        while current and current.visit_id not in visited:
-            chain.insert(0, {
-                'visit_id': current.visit_id,
-                'record': self.storage[current.visit_id]
-            })
-            visited.add(current.visit_id)
-            
-            incoming = self.graph.incoming_edges(current)
-            if not incoming:
-                break
-            current = next(iter(incoming.keys()))
-        
-        # Go forward from original visit
-        visited_forward = set(visited)
-        current = self.graph.vertices[visit_id]
-        
-        for next_vertex in self.graph.outgoing_edges(current):
-            if next_vertex.visit_id not in visited_forward:
-                chain.append({
-                    'visit_id': next_vertex.visit_id,
-                    'record': self.storage[next_vertex.visit_id]
-                })
-                visited_forward.add(next_vertex.visit_id)
-        
-        return chain
 
+#bzbzal
     def find_doctor_referral_network(self, doctor_id, depth=1):
         """Find doctors in referral network (both directions)"""
         network = {'refers_to': set(), 'referred_by': set()}
@@ -314,8 +280,10 @@ class GraphManager:
         return network
 
 
+
+#add in the UI
     def find_department_transitions(self, patient_id):
-        """Track how a patient moved between departments"""
+        """Tracks how a patient moved between departments"""
         journey = self.find_patient_journey(patient_id)
         transitions = []
         
@@ -334,6 +302,7 @@ class GraphManager:
         
         return transitions
 
+#add in the UI
     def find_high_risk_paths(self, risk_threshold=0.7):
         """Find patient journeys with consistently high risk scores"""
         high_risk_journeys = {}
@@ -363,6 +332,7 @@ class GraphManager:
         
         return result
 
+#check wuth artificial data
     def find_circular_referrals(self):
         """Detect circular referral patterns (cycles in the graph)"""
         sccs = self.graph.strongly_connected_components()
@@ -392,6 +362,8 @@ class GraphManager:
         
         return circular_patterns
 
+
+#add in the UI
     def find_longest_patient_journey(self):
         """Find the patient with the most visits"""
         patient_visit_counts = {}
@@ -410,6 +382,7 @@ class GraphManager:
             'journey': self.find_patient_journey(max_patient[0])
         }
 
+#add in the UI 
     def get_graph_statistics(self):
         """Get overall graph statistics"""
         total_vertices = len(self.graph.vertices)
