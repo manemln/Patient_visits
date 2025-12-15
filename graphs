@@ -1,643 +1,440 @@
-#GRAPH
+# ---------------- Vertex & Edge ----------------
+
 class Vertex:
-    #vertex in the graph (a visit_id)
     def __init__(self, visit_id, element=None):
-        self.visit_id = visit_id 
-        self.element = element     # Can store additional data (the full record)
-        self.color = "white"       # For BFS/DFS: white, gray, black
-        self.distance = float('inf')  
-        self.predecessor = None    # For BFS/DFS: parent in traversal tree
-        self.discovery_time = 0    # For DFS: when vertex was discovered
-        self.finish_time = 0       # For DFS: when vertex processing finished
-    
-    def get_element(self):
-        return self.element
-    
-    def __str__(self):
-        return f"Vertex(visit_id={self.visit_id})"
+        self.visit_id = visit_id
+        self.element = element
+        self.color = "white"
+        self.distance = float('inf')
+        self.predecessor = None
+        self.discovery_time = 0
+        self.finish_time = 0
+
 
 class Edge:
-    #edge in the graph (referral relationship)
-    def __init__(self, origin, destination, element=None):
-        self.origin = origin         
-        self.destination = destination 
-        self.element = element         #Can store referral info(doctor_id,...)
-    
+    def __init__(self, u, v, element=None):
+        self.origin = u
+        self.destination = v
+        self.element = element
+
     def endpoints(self):
-        #gives tuple of (origin, destination)vertices
-        return (self.origin, self.destination)
-    
-    def opposite(self, vertex):
-        #returns the vertex opposite to the given vertex on this edge
-        if vertex == self.origin:
-            return self.destination
-        elif vertex == self.destination:
-            return self.origin
-        else:
-            raise ValueError("Vertex not incident to this edge")
-    
-    def get_element(self):
-        return self.element
-    
-    def __str__(self):
-        return f"Edge({self.origin.visit_id} -> {self.destination.visit_id})"
+        return self.origin, self.destination
+
+
+# ---------------- Graph ----------------
 
 class Graph:
-    #Adjacency Map representation of a directed graph
     def __init__(self, directed=True):
         self.directed = directed
-        self.vertices = {}  # maps visit_id to Vertex object, {1:Vertex(1),...}
-        #Adjacency map = vertex -> {opposite_vertex: Edge} 
-        self.outgoing = {} #{
-                                Vertex(1):{
-                                            Vertex(15): Edge(1→15), ...
-                                          }
-                            #}
-        self.incoming = {} #like outgoing
-    
-    #basic graph operations
-    def num_vertices(self):
-        return len(self.vertices)
-    
-    def num_edges(self):
-        total = sum(len(edges) for edges in self.outgoing.values())
-        return total
-    
-    def get_vertices(self):
-        return self.vertices.values()
-        #getting all vertices
-    
-    def get_edges(self):
-        edges = []
-        for vertex_edges in self.outgoing.values():
-            edges.extend(vertex_edges.values())
-        return edges
-        #won't have duplicates as we use directed graph in case of undirected we would use set to avoid duplics
+        self.vertices = {}        # visit_id -> Vertex
+        self.outgoing = {}        # Vertex -> {Vertex: Edge}
+        self.incoming = {}        # Vertex -> {Vertex: Edge}
 
-    def get_vertex(self, visit_id):
-        return self.vertices.get(visit_id)
-        #getting 1 vertex by visit_id
-    
-    def get_edge(self, u, v):
-        #returns edge from vertex u to v, or None if it doesn't exist
-        if isinstance(u, int):
-            u = self.vertices.get(u)
-        if isinstance(v, int):
-            v = self.vertices.get(v)
-        
-        if u is None or v is None:
-            return None
-        
-        return self.outgoing.get(u, {}).get(v) 
-#if u exists returns its values{vertex-edge couples},get the value of vertex v inside it which is the correspoding edge 
-    
-    def degree(self, v, outgoing=True):
-        #return number of outgoing edges from v
-        if isinstance(v, int):
-            v = self.vertices.get(v)
-        
-        adj_map = self.outgoing if outgoing else self.incoming
-        return len(adj_map.get(v, {}))
-    
-    def out_degree(self, v):
-        return self.degree(v, True)
-    
-    def in_degree(self, v):
-        return self.degree(v, False)
-    
-    def incident_edges(self, v, outgoing=True):
-        #return all outgoing (or incoming) edges from vertex v
-        #returns dictionary {opposite_vertex: edge}
-        if isinstance(v, int):
-            v = self.vertices.get(v)
-        
-        adj_map = self.outgoing if outgoing else self.incoming
-        return adj_map.get(v, {})
-    
-    def outgoing_edges(self, v):
-        return self.incident_edges(v, True)
-    
-    def incoming_edges(self, v):
-        return self.incident_edges(v, False)
-    
-    #modification operations
+    # ---- Basic Operations ----
+
     def insert_vertex(self, visit_id, element=None):
-        #creates and returns a new Vertex storing visit_id
         if visit_id in self.vertices:
             return self.vertices[visit_id]
-        
+
         v = Vertex(visit_id, element)
         self.vertices[visit_id] = v
         self.outgoing[v] = {}
         self.incoming[v] = {}
         return v
-    
-    def insert_edge(self, u, v, element=None):
-        #creates and returns a new Edge from vertex u to vertex v
 
-        # Convert visit_ids to Vertex objects if needed
+    def insert_edge(self, u, v, element=None):
         if isinstance(u, int):
-            if u not in self.vertices:
-                u = self.insert_vertex(u)
-            else:
-                u = self.vertices[u]
-        
+            u = self.vertices.get(u) or self.insert_vertex(u)
         if isinstance(v, int):
-            if v not in self.vertices:
-                v = self.insert_vertex(v)
-            else:
-                v = self.vertices[v]
-        
-        # Check if edge already exists
+            v = self.vertices.get(v) or self.insert_vertex(v)
+
         if v in self.outgoing[u]:
             return self.outgoing[u][v]
-        
-        #Creating edge
+
         e = Edge(u, v, element)
         self.outgoing[u][v] = e
         self.incoming[v][u] = e
-        
         return e
-    
-    def remove_vertex(self, v):
-        #remove vertex v and all its incident edges
+
+    def outgoing_edges(self, v):
         if isinstance(v, int):
             v = self.vertices.get(v)
-        
-        if v is None:
-            return
-        
-        # Remove all outgoing edges
-        for dest in list(self.outgoing[v].keys()):#{dest:edge}
-            del self.incoming[dest][v]#remove value of dest which is the edge connecting origin to dest
-        del self.outgoing[v]
-        
-        # Remove all incoming edges
-        for origin in list(self.incoming[v].keys()):
-            del self.outgoing[origin][v]
-        del self.incoming[v]
-        
-        # Remove vertex itself
-        del self.vertices[v.visit_id]
-    
-    def remove_edge(self, e):
-        u, v = e.endpoints() #origin goes to destination
-        
-        if v in self.outgoing.get(u, {}): # takes origins' values {dest:edge,dest:edge,...}
-            del self.outgoing[u][v] # remove dest:edge couple
-        
-        if u in self.incoming.get(v, {}):
-            del self.incoming[v][u]
-    
-    #traversals
-    
-    def BFS(self, start_visit_id):
-        #returns dictionary: {visit_id: distance_from_start}
-        #sets vertex.color, vertex.distance, vertex.predecessor
+        return self.outgoing.get(v, {})
 
+    def incoming_edges(self, v):
+        if isinstance(v, int):
+            v = self.vertices.get(v)
+        return self.incoming.get(v, {})
+
+    # ---- Traversals ----
+
+    def BFS(self, start_visit_id):
         for vertex in self.vertices.values():
             vertex.color = "white"
             vertex.distance = float('inf')
             vertex.predecessor = None
-        
-        #start vertex
+
         start = self.vertices.get(start_visit_id)
-        if start is None:
-            print(f"Start vertex {start_visit_id} not found")
+        if not start:
             return {}
-        
-        #Initialize start vertex
+
         start.color = "gray"
         start.distance = 0
-        start.predecessor = None
-        
-        #list as a queue (append to end, pop from beginning)
         queue = [start]
         distances = {start.visit_id: 0}
-        
+
         while queue:
-            u = queue.pop(0)  # Dequeue from front
-            
-            # Explore all adjacent vertices
-            for v, edge in self.outgoing[u].items():
-                if v.color == "white": 
+            u = queue.pop(0)
+            for v in self.outgoing[u]:
+                if v.color == "white":
                     v.color = "gray"
                     v.distance = u.distance + 1
                     v.predecessor = u
                     distances[v.visit_id] = v.distance
                     queue.append(v)
-            
-            u.color = "black"  # Finished processing
-        
+            u.color = "black"
+
         return distances
-    
+
     def DFS(self):
-        #returns dictionary: {visit_id: (discovery_time, finish_time)}
-       #sets vertex.color, vertex.discovery_time, vertex.finish_time, vertex.predecessor
-    
         for vertex in self.vertices.values():
             vertex.color = "white"
             vertex.predecessor = None
             vertex.discovery_time = 0
             vertex.finish_time = 0
-        
-        time = [0]  # Use list to make it mutable in nested function
+
+        time = [0]
         times = {}
-        
+
         def DFS_visit(u):
             time[0] += 1
             u.discovery_time = time[0]
             u.color = "gray"
-            
-            # Explore all adjacent vertices
-            for v, edge in self.outgoing[u].items():
+            for v in self.outgoing[u]:
                 if v.color == "white":
                     v.predecessor = u
                     DFS_visit(v)
-            
             u.color = "black"
             time[0] += 1
             u.finish_time = time[0]
             times[u.visit_id] = (u.discovery_time, u.finish_time)
-        
-        # Visit all vertices (to handle disconnected components)
+
         for vertex in self.vertices.values():
             if vertex.color == "white":
                 DFS_visit(vertex)
-        
+
         return times
-    
-    def DFS_from_vertex(self, start_visit_id):
-        #returns list of visit_ids in DFS order
-        start = self.vertices.get(start_visit_id)
-        if start is None:
-            print(f"Start vertex {start_visit_id} not found")
-            return []
-        
-        # Initialize
-        for vertex in self.vertices.values():
-            vertex.color = "white"
-        
-        dfs_order = []
-        
-        def DFS_visit(u):
-            u.color = "gray"
-            dfs_order.append(u.visit_id)
-            
-            for v, edge in self.outgoing[u].items():
-                if v.color == "white":
-                    DFS_visit(v)
-            
-            u.color = "black"
-        
-        DFS_visit(start)
-        return dfs_order
-    
+
+    # ---- Pathfinding ----
+
     def find_path(self, start_visit_id, end_visit_id):
-        #finding the shortest path from start to end using BFS
-        #returns list of visit_ids representing the path, or empty list if no path exists
-     
-        #BFS from start
         self.BFS(start_visit_id)
-        
         end = self.vertices.get(end_visit_id)
-        if end is None or end.distance == float('inf'):
-            return []  # No path exists
-        
-        #path by following predecessors backward
+        if not end or end.distance == float('inf'):
+            return []
+
         path = []
         current = end
-        while current is not None:
+        while current:
             path.append(current.visit_id)
             current = current.predecessor
-        
-        path.reverse()  #get start to end order
-        return path
-    
-    def is_connected(self):
-        #checking if graph is connected
-        #returns True if all vertices are reachable from any starting vertex
-        
-        if len(self.vertices) == 0:
-            return True
-        
-        #any vertex
-        start = next(iter(self.vertices.values()))
-        
-        # Run DFS
-        visited = set()
-        
-        def DFS_visit(u):
-            visited.add(u.visit_id)
-            for v in self.outgoing[u].keys():
-                if v.visit_id not in visited:
-                    DFS_visit(v)
-        
-        DFS_visit(start)
-        return len(visited) == len(self.vertices)
-    
-    def topological_sort(self):
-        #topological sort on DAG
-        #returns list of visit_ids in topological order, or None if graph has cycles
-        
-        # Run DFS to compute finish times
-        times = self.DFS()
-        
-        # Sort vertices by decreasing finish time
-        sorted_vertices = sorted(times.items(), key=lambda x: x[1][1], reverse=True) #((vertex,(1,8)),(vertex2,())
-        return [visit_id for visit_id, _ in sorted_vertices]
+        return path[::-1]
+
+    # ---- Strongly Connected Components ----
 
     def transpose(self):
-        #used for finding strongly connected components
-
         gt = Graph(directed=self.directed)
-        
-        #adding all vertices
-        for visit_id, vertex in self.vertices.items():
-            gt.insert_vertex(visit_id, vertex.element)
-        
-        #adding all edges in reverse direction
+        for vid, vertex in self.vertices.items():
+            gt.insert_vertex(vid, vertex.element)
         for edge in self.get_edges():
             u, v = edge.endpoints()
             gt.insert_edge(v.visit_id, u.visit_id, edge.element)
-        
         return gt
-    
-    def strongly_connected_components(self):
-       
-        #finding strongly connected components using s
-        #returns list of lists, where each inner list is a strongly connected component
 
-        # Step 1: Running DFS on original graph to get finish times
+    def get_edges(self):
+        edges = []
+        for vertex_edges in self.outgoing.values():
+            edges.extend(vertex_edges.values())
+        return edges
+
+    def strongly_connected_components(self):
         times = self.DFS()
-        
-        # Step 2: Creating transpose graph
         gt = self.transpose()
-        
-        # Step 3: Running DFS on transpose in decreasing finish time order
+
         for vertex in gt.vertices.values():
             vertex.color = "white"
-        
+
         sccs = []
-        
+
         def DFS_visit(u, component):
             u.color = "gray"
             component.append(u.visit_id)
-            
-            for v in gt.outgoing[u].keys():
+            for v in gt.outgoing[u]:
                 if v.color == "white":
                     DFS_visit(v, component)
-            
             u.color = "black"
-        
-        # Visit vertices in decreasing finish time order
+
         sorted_vertices = sorted(times.items(), key=lambda x: x[1][1], reverse=True)
-        
-        for visit_id, _ in sorted_vertices:
-            vertex = gt.vertices[visit_id]
+        for vid, _ in sorted_vertices:
+            vertex = gt.vertices[vid]
             if vertex.color == "white":
                 component = []
                 DFS_visit(vertex, component)
                 sccs.append(component)
-        
+
         return sccs
-    
-  
-# GRAPH MANAGER
+
 
 class GraphManager:
-    """
-    Integrates with IndexManager to build graph from visit records
-    GRAPH BUILDING:
-    Vertices: Each visit_id is a vertex
-    Edges: Created based on doctor referrals between patients
-    
-    When patient P sees doctor D1 and gets referred to doctor D2,
-    we find the visit where P sees D2 and create an edge from the original visit
-    to the referred visit
-    """
-
     def __init__(self):
         self.graph = Graph(directed=True)
         self.storage = None
-    
-    def build_from_records(self, storage, index_manager):
-        """
-        1. Adding all visits as vertices
-        2. For each visit with a referral_doctor:
-            Find other visits by the same patient
-            If the patient later visited the referral_doctor, create edge
-        
-        Args:
-            storage: Dictionary of records {visit_id: record}, accessing by id
-            index_manager: IndexManager instance for efficient queries, acessing by other criterias
-        """
 
+    def build_from_records(self, storage, index_manager):
+        """Build graph with improved referral chain logic"""
         self.storage = storage
         
-        # Step 1: Adding all visits as vertices
+        # Insert all vertices
         for visit_id, record in storage.items():
             self.graph.insert_vertex(visit_id, record)
+
+        # Build referral edges with temporal awareness
+        patient_visits = {}  # patient_id -> list of (visit_id, record)
         
-        print(f"Added {self.graph.num_vertices()} vertices")
-        
-        # Step 2: Build edges based on referrals
-        edges_created = 0
-        
+        # Group visits by patient
         for visit_id, record in storage.items():
             patient_id = record['patient_id']
-            current_doctor = record['doctor_id']
-            referral_doctor = record['referral_doctor']
+            if patient_id not in patient_visits:
+                patient_visits[patient_id] = []
+            patient_visits[patient_id].append((visit_id, record))
+        
+        # Sort each patient's visits by visit_id (proxy for time)
+        for patient_id, visits in patient_visits.items():
+            visits.sort(key=lambda x: x[0])  # Sort by visit_id
             
-            # If this visit has a referral
-            if referral_doctor and referral_doctor != current_doctor:
-                # Find all visits by this patient
-                patient_visits = index_manager.find_by_patient(patient_id)
+            # Create edges between consecutive visits
+            for i in range(len(visits) - 1):
+                curr_vid, curr_rec = visits[i]
+                next_vid, next_rec = visits[i + 1]
                 
-                # Look for a visit where the patient saw the referral doctor
-                for other_visit_id in patient_visits:
-                    if other_visit_id == visit_id:
-                        continue
-                    
-                    other_record = storage[other_visit_id]
-                    
-                    # If the other visit is with the referral doctor
-                    if other_record['doctor_id'] == referral_doctor:
-                        # edge: current_visit -> referred_visit
-                        self.graph.insert_edge(
-                            visit_id,
-                            other_visit_id,
-                            element={
-                                'referral_doctor': referral_doctor,
-                                'original_doctor': current_doctor,
-                                'patient_id': patient_id
-                            }
-                        )
-                        edges_created += 1
-                        break  #Only create one edge per referral
-        
-        print(f"Created {edges_created} referral edges")
-        print(f"Graph built successfully: {self.graph.num_vertices()} vertices, {self.graph.num_edges()} edges")
-    
-    def add_referral(self, from_visit_id, to_visit_id, referral_doctor=None):
-        #adding referral edge from one visit to another
-        element = {'referral_doctor': referral_doctor} if referral_doctor else None
-        return self.graph.insert_edge(from_visit_id, to_visit_id, element)
-    
-    def find_referral_chain(self, visit_id):
-        #finding the chain of referrals leading to this visit
-        #returns list of visit_ids from original visit to current
-        #uses backward traversal through incoming edges
-        
-        vertex = self.graph.get_vertex(visit_id)
-        if vertex is None:
-            return []
-        
-        chain = []
-        visited = set()  # Prevent infinite loops, to avoid duplicates if we have a cycle
-        current = vertex
-        
-        #following predecessors backward (incoming edges)
-        while current and current.visit_id not in visited:
-            chain.insert(0, current.visit_id)
-            visited.add(current.visit_id)
-            
-            incoming = self.graph.incoming_edges(current)
-            if len(incoming) == 0:
-                break #reached the start
-            
-            # Take the first incoming edge (assume single referral source)
-            predecessor = next(iter(incoming.keys()))
-            current = predecessor
-        
-        return chain
-    
-    def find_all_referrals_from(self, visit_id):
-        #find all visits that were referred from this visit (direct and indirect)
-        #uses BFS to find all reachable visits
-        
-        distances = self.graph.BFS(visit_id)
-        return list(distances.keys())
-    
-    def find_patient_journey(self, patient_id):
-        #find the complete journey of a patient through different doctors
-        #returns list of (visit_id, doctor_id, diagnosis) tuples in chronological order
+                # Edge from current visit to next visit
+                self.graph.insert_edge(curr_vid, next_vid, {
+                    "patient_id": patient_id,
+                    "from_doctor": curr_rec['doctor_id'],
+                    "to_doctor": next_rec['doctor_id'],
+                    "from_department": curr_rec['department'],
+                    "to_department": next_rec['department'],
+                    "is_referral": curr_rec.get('referral_doctor') == next_rec['doctor_id']
+                })
 
-        if not self.storage:
-            return []
-        
-        # Get all visits for this patient
+    def find_patient_journey(self, patient_id):
+        """Get complete patient journey with visit details"""
         journey = []
-        for visit_id, record in self.storage.items():
+        for vid, record in self.storage.items():
             if record['patient_id'] == patient_id:
                 journey.append({
-                    'visit_id': visit_id,
+                    'visit_id': vid,
                     'doctor_id': record['doctor_id'],
                     'department': record['department'],
                     'diagnosis': record['diagnosis'],
-                    'referral_doctor': record['referral_doctor']
+                    'treatment_cost': record['treatment_cost'],
+                    'risk_score': record['risk_score'],
+                    'outcome_score': record['outcome_score'],
+                    'referral_doctor': record.get('referral_doctor')
                 })
-        
-        return journey
+        return sorted(journey, key=lambda x: x['visit_id'])
 
+    def find_complete_referral_chain(self, visit_id):
+        """Find entire referral chain (both forward and backward)"""
+        if visit_id not in self.graph.vertices:
+            return []
+        
+        # Find all visits in the chain (backward traversal)
+        chain = []
+        visited = set()
+        current = self.graph.vertices[visit_id]
+        
+        # Go backward to find start
+        while current and current.visit_id not in visited:
+            chain.insert(0, {
+                'visit_id': current.visit_id,
+                'record': self.storage[current.visit_id]
+            })
+            visited.add(current.visit_id)
+            
+            incoming = self.graph.incoming_edges(current)
+            if not incoming:
+                break
+            current = next(iter(incoming.keys()))
+        
+        # Go forward from original visit
+        visited_forward = set(visited)
+        current = self.graph.vertices[visit_id]
+        
+        for next_vertex in self.graph.outgoing_edges(current):
+            if next_vertex.visit_id not in visited_forward:
+                chain.append({
+                    'visit_id': next_vertex.visit_id,
+                    'record': self.storage[next_vertex.visit_id]
+                })
+                visited_forward.add(next_vertex.visit_id)
+        
+        return chain
 
     def find_doctor_referral_network(self, doctor_id, depth=1):
-        #find the network of doctors that this doctor refers to (or gets referrals from)
-        #returns set of doctor_ids at given depth
-        
-        #doctor_id: doctor to analyze
-        #depth: How many referral steps to follow (1 = direct, 2 = indirect, etc.)
-        
-        if not self.storage:
-            return set()
-        
-        # Find all visits where this doctor made referrals
-        referred_doctors = set()
-        
-        for visit_id, record in self.storage.items():
-            if record['doctor_id'] == doctor_id and record['referral_doctor']:
-                referred_doctors.add(record['referral_doctor'])
-        
-        # If depth > 1, recursively find referrals from referred doctors
-        if depth > 1:
-            extended_network = set(referred_doctors) #copy of referred_doctors to work on
-            for ref_doctor in referred_doctors:
-                extended_network.update(
-                    self.find_doctor_referral_network(ref_doctor, depth - 1)
-                )
-            return extended_network
-        
-        return referred_doctors
-    
-    def get_referral_statistics(self):
-        stats = {
-            'total_visits': self.graph.num_vertices(),
-            'total_referral_edges': self.graph.num_edges(),
-            'visits_that_led_to_referrals': 0,
-            'visits_that_were_referred': 0,
-            'max_referrals_from_one_visit': 0,
-            'max_incoming_referrals': 0,
-            'avg_referrals_per_visit': 0
-        }
-        
-        total_out = 0
-        
-        for vertex in self.graph.get_vertices():
-            out_deg = self.graph.out_degree(vertex)
-            in_deg = self.graph.in_degree(vertex)
-            
-            if out_deg > 0:
-                stats['visits_that_led_to_referrals'] += 1
-                stats['max_referrals_from_one_visit'] = max(
-                    stats['max_referrals_from_one_visit'], out_deg
-                )
-                total_out += out_deg
-            
-            if in_deg > 0:
-                stats['visits_that_were_referred'] += 1
-                stats['max_incoming_referrals'] = max(
-                    stats['max_incoming_referrals'], in_deg
-                )
-        
-        if stats['total_visits'] > 0:
-            stats['avg_referrals_per_visit'] = round(
-                total_out / stats['total_visits'], 2
-            )
-        
-        return stats
-
-    def detect_referral_cycles(self):
-        #detects if there are any cycles in referral patterns
-        #returns list of strongly connected components with size > 1.
-      
-        sccs = self.graph.strongly_connected_components()
-        cycles = [scc for scc in sccs if len(scc) > 1]
-        return cycles
-    
-    def print_graph(self, limit=20): #prints first 20visits as vertices in the graph
-        """Print the graph structure"""
-        self.graph.print_graph(limit)
-    
-    def analyze_department_referrals(self):
-        #analyzes which departments refer to which other departments
-        #returns dictionary: {from_dept: {to_dept: count}}
-
-        if not self.storage:
-            return {}
-        
-        dept_referrals = {}
+        """Find doctors in referral network (both directions)"""
+        network = {'refers_to': set(), 'referred_by': set()}
         
         for edge in self.graph.get_edges():
-            from_visit, to_visit = edge.endpoints()
-            from_dept = self.storage[from_visit.visit_id]['department']
-            to_dept = self.storage[to_visit.visit_id]['department']
-            
-            if from_dept not in dept_referrals:
-                dept_referrals[from_dept] = {}
-            
-            if to_dept not in dept_referrals[from_dept]:
-                dept_referrals[from_dept][to_dept] = 0
-            
-            dept_referrals[from_dept][to_dept] += 1
+            edge_data = edge.element
+            if edge_data:
+                from_doc = edge_data.get('from_doctor')
+                to_doc = edge_data.get('to_doctor')
+                
+                if from_doc == doctor_id:
+                    network['refers_to'].add(to_doc)
+                if to_doc == doctor_id:
+                    network['referred_by'].add(from_doc)
         
-        return dept_referrals
+        if depth > 1:
+            extended_refers = set(network['refers_to'])
+            extended_referred = set(network['referred_by'])
+            
+            for d in network['refers_to']:
+                sub_network = self.find_doctor_referral_network(d, depth-1)
+                extended_refers.update(sub_network['refers_to'])
+            
+            for d in network['referred_by']:
+                sub_network = self.find_doctor_referral_network(d, depth-1)
+                extended_referred.update(sub_network['referred_by'])
+            
+            network['refers_to'] = extended_refers
+            network['referred_by'] = extended_referred
+        
+        return network
+
+
+    def find_department_transitions(self, patient_id):
+        """Track how a patient moved between departments"""
+        journey = self.find_patient_journey(patient_id)
+        transitions = []
+        
+        for i in range(len(journey) - 1):
+            curr = journey[i]
+            next_visit = journey[i + 1]
+            
+            if curr['department'] != next_visit['department']:
+                transitions.append({
+                    'from_dept': curr['department'],
+                    'to_dept': next_visit['department'],
+                    'from_diagnosis': curr['diagnosis'],
+                    'to_diagnosis': next_visit['diagnosis'],
+                    'visit_ids': (curr['visit_id'], next_visit['visit_id'])
+                })
+        
+        return transitions
+
+    def find_high_risk_paths(self, risk_threshold=0.7):
+        """Find patient journeys with consistently high risk scores"""
+        high_risk_journeys = {}
+        
+        # Group by patient
+        for vid, record in self.storage.items():
+            patient_id = record['patient_id']
+            if patient_id not in high_risk_journeys:
+                high_risk_journeys[patient_id] = []
+            high_risk_journeys[patient_id].append({
+                'visit_id': vid,
+                'risk_score': record['risk_score'],
+                'department': record['department'],
+                'diagnosis': record['diagnosis']
+            })
+        
+        # Filter patients with high average risk
+        result = {}
+        for patient_id, visits in high_risk_journeys.items():
+            avg_risk = sum(v['risk_score'] for v in visits) / len(visits)
+            if avg_risk >= risk_threshold:
+                result[patient_id] = {
+                    'average_risk': avg_risk,
+                    'visit_count': len(visits),
+                    'visits': sorted(visits, key=lambda x: x['visit_id'])
+                }
+        
+        return result
+
+    def find_circular_referrals(self):
+        """Detect circular referral patterns (cycles in the graph)"""
+        sccs = self.graph.strongly_connected_components()
+        
+        # Filter SCCs with more than 1 vertex (actual cycles)
+        circular_patterns = []
+        for component in sccs:
+            if len(component) > 1:
+                # Get patient info for this cycle
+                patient_ids = set()
+                visits = []
+                for vid in component:
+                    record = self.storage[vid]
+                    patient_ids.add(record['patient_id'])
+                    visits.append({
+                        'visit_id': vid,
+                        'patient_id': record['patient_id'],
+                        'doctor_id': record['doctor_id'],
+                        'department': record['department']
+                    })
+                
+                circular_patterns.append({
+                    'patients': list(patient_ids),
+                    'visits': visits,
+                    'cycle_length': len(component)
+                })
+        
+        return circular_patterns
+
+    def find_longest_patient_journey(self):
+        """Find the patient with the most visits"""
+        patient_visit_counts = {}
+        
+        for vid, record in self.storage.items():
+            patient_id = record['patient_id']
+            if patient_id not in patient_visit_counts:
+                patient_visit_counts[patient_id] = []
+            patient_visit_counts[patient_id].append(vid)
+        
+        max_patient = max(patient_visit_counts.items(), key=lambda x: len(x[1]))
+        
+        return {
+            'patient_id': max_patient[0],
+            'visit_count': len(max_patient[1]),
+            'journey': self.find_patient_journey(max_patient[0])
+        }
+
+    def get_graph_statistics(self):
+        """Get overall graph statistics"""
+        total_vertices = len(self.graph.vertices)
+        total_edges = len(self.graph.get_edges())
+        
+        # Count connected components
+        visited = set()
+        components = 0
+        
+        for vertex in self.graph.vertices.values():
+            if vertex.visit_id not in visited:
+                components += 1
+                # Simple BFS to mark component
+                queue = [vertex]
+                while queue:
+                    v = queue.pop(0)
+                    if v.visit_id in visited:
+                        continue
+                    visited.add(v.visit_id)
+                    queue.extend(self.graph.outgoing_edges(v).keys())
+                    queue.extend(self.graph.incoming_edges(v).keys())
+        
+        return {
+            'total_vertices': total_vertices,
+            'total_edges': total_edges,
+            'connected_components': components,
+            'average_degree': (2 * total_edges) / total_vertices if total_vertices > 0 else 0
+        }
