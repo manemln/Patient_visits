@@ -1,519 +1,226 @@
-import streamlit as st
 import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Add the core directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'core'))
 
-from storage import DataStorage, IndexManager
-from graph import GraphManager
-from query_engine import QueryEngine
+import streamlit as st
+st.set_page_config(page_title="Patient Visits", layout="wide")
 
-# Page configuration
-st.set_page_config(
-    page_title="Healthcare Data Management System",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+from core.storage import DataStorage
+from core.indexing import IndexManager
+from core.graph import GraphManager
+from core.query_engine import QueryEngine
+import pandas as pd
 
-# Custom CSS
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
-    .stDataFrame {
-        width: 100%;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# -------------------- Load Data and Initialize --------------------
+@st.cache_data(show_spinner=True)
+def load_system(sample_size=100000):
+    df = pd.read_csv("data/patient_visits.csv")
+    subset_df = df.head(sample_size)
+    subset_df.to_csv("data/patient_visits_subset.csv", index=False)
 
-# Initialize session state
-@st.cache_resource
-def load_system():
-    """Load and initialize the entire system"""
-    csv_path = r"C:\Users\ASUS\OneDrive - National Center for Educational Technologies\Desktop\DSA files\patient_visits.csv"
-    
-    with st.spinner("Loading 1,000,000 records..."):
-        storage = DataStorage(csv_path)
-        storage.load_data()
-        
-        index_manager = IndexManager()
-        index_manager.build(storage.get_all())
-        
-        graph_manager = GraphManager()
-        graph_manager.build_from_records(storage.records, index_manager)
-        
-        query_engine = QueryEngine(storage, index_manager, graph_manager)
-    
-    return storage, index_manager, graph_manager, query_engine
+    storage = DataStorage("data/patient_visits_subset.csv")
+    storage.load_data()
 
-# Load system
-try:
-    storage, index_manager, graph_manager, query_engine = load_system()
-    system_loaded = True
-except Exception as e:
-    st.error(f"Error loading system: {e}")
-    system_loaded = False
+    index_manager = IndexManager()
+    index_manager.build(storage.get_all())
 
-# Main header
-st.markdown('<div class="main-header">🏥 Healthcare Data Management System</div>', unsafe_allow_html=True)
+    graph_manager = GraphManager()
+    graph_manager.build_from_records(storage.get_all(), index_manager)
 
-if not system_loaded:
-    st.stop()
+    engine = QueryEngine(index_manager.storage, index_manager, graph_manager)
+    return storage, index_manager, graph_manager, engine
 
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Select Operation",
-    ["Dashboard", "Search & Query", "Patient Journey", "Doctor Network", 
-     "Cost Analysis", "Referral Chain", "Record Management", "Graph Analysis"]
-)
+storage, index_manager, graph_manager, engine = load_system()
 
-# Dashboard Page
-if page == "Dashboard":
-    st.header("📊 System Dashboard")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    records = storage.records
-    
-    with col1:
-        st.metric("Total Records", f"{len(records):,}")
-    
-    with col2:
-        unique_patients = len(set(r['patient_id'] for r in records.values()))
-        st.metric("Unique Patients", f"{unique_patients:,}")
-    
-    with col3:
-        unique_doctors = len(set(r['doctor_id'] for r in records.values()))
-        st.metric("Unique Doctors", f"{unique_doctors:,}")
-    
-    with col4:
-        total_cost = sum(r['treatment_cost'] for r in records.values())
-        st.metric("Total Treatment Cost", f"${total_cost:,.2f}")
-    
-    st.divider()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Department Distribution")
-        dept_counts = {}
-        for r in records.values():
-            dept = r['department']
-            dept_counts[dept] = dept_counts.get(dept, 0) + 1
-        st.bar_chart(dept_counts)
-    
-    with col2:
-        st.subheader("Recent Records")
-        recent = sorted(records.values(), key=lambda x: x['visit_id'], reverse=True)[:10]
-        st.dataframe(recent, use_container_width=True)
+# -------------------- Streamlit UI --------------------
+st.title("🩺 Patient Visits System")
 
-# Search & Query Page
-elif page == "Search & Query":
-    st.header("🔍 Search & Query")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["By Patient", "By Doctor", "By Cost", "By Visit ID"])
-    
-    with tab1:
-        st.subheader("Search by Patient ID")
-        patient_id = st.number_input("Enter Patient ID", min_value=1, value=1, step=1)
-        
-        if st.button("Search Patient", key="search_patient"):
-            visit_ids = index_manager.find_by_patient(patient_id)
-            if visit_ids:
-                st.success(f"Found {len(visit_ids)} visits for Patient {patient_id}")
-                results = [storage.records[vid] for vid in visit_ids]
-                st.dataframe(results, use_container_width=True)
-            else:
-                st.warning(f"No visits found for Patient {patient_id}")
-    
-    with tab2:
-        st.subheader("Search by Doctor ID")
-        doctor_id = st.number_input("Enter Doctor ID", min_value=1, value=1, step=1)
-        
-        if st.button("Search Doctor", key="search_doctor"):
-            visit_ids = index_manager.find_by_doctor(doctor_id)
-            if visit_ids:
-                st.success(f"Found {len(visit_ids)} visits for Doctor {doctor_id}")
-                results = [storage.records[vid] for vid in visit_ids]
-                st.dataframe(results, use_container_width=True)
-            else:
-                st.warning(f"No visits found for Doctor {doctor_id}")
-    
-    with tab3:
-        st.subheader("Search by Cost Range")
-        col1, col2 = st.columns(2)
-        with col1:
-            low_cost = st.number_input("Minimum Cost", min_value=0.0, value=1000.0, step=100.0)
-        with col2:
-            high_cost = st.number_input("Maximum Cost", min_value=0.0, value=5000.0, step=100.0)
-        
-        if st.button("Search by Cost Range", key="search_cost"):
-            results = query_engine.get_visits_by_cost_range(low_cost, high_cost)
-            if results:
-                st.success(f"Found {len(results)} visits in cost range ${low_cost:,.2f} - ${high_cost:,.2f}")
-                st.dataframe(results, use_container_width=True)
-            else:
-                st.warning(f"No visits found in cost range ${low_cost:,.2f} - ${high_cost:,.2f}")
-    
-    with tab4:
-        st.subheader("Search by Visit ID")
-        visit_id = st.number_input("Enter Visit ID", min_value=1, value=1, step=1)
-        
-        if st.button("Search Visit", key="search_visit"):
-            visit_ids = index_manager.find_by_visit(visit_id)
-            if visit_ids:
-                record = storage.records[visit_id]
-                st.success(f"Found Visit {visit_id}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Patient ID:** {record['patient_id']}")
-                    st.write(f"**Doctor ID:** {record['doctor_id']}")
-                    st.write(f"**Department:** {record['department']}")
-                    st.write(f"**Diagnosis:** {record['diagnosis']}")
-                
-                with col2:
-                    st.write(f"**Treatment Cost:** ${record['treatment_cost']:,.2f}")
-                    st.write(f"**Number of Visits:** {record['number_of_visits']}")
-                    st.write(f"**Risk Score:** {record['risk_score']}")
-                    st.write(f"**Outcome Score:** {record['outcome_score']}")
-                
-                if record.get('referral_doctor'):
-                    st.info(f"**Referral Doctor:** {record['referral_doctor']}")
-            else:
-                st.warning(f"Visit {visit_id} not found")
+st.sidebar.header("Navigation")
+menu_option = st.sidebar.radio("Choose Operation", [
+    "Search / Queries",
+    "Add / Modify / Delete",
+    "Analytics",
+    "Graph Analysis",
+    "Traversals (BFS / DFS)"
+])
 
-# Patient Journey Page
-elif page == "Patient Journey":
-    st.header("🚶 Patient Journey Analysis")
-    
-    patient_id = st.number_input("Enter Patient ID", min_value=1, value=213, step=1)
-    
-    if st.button("Analyze Patient Journey"):
-        journey = query_engine.get_patient_journey(patient_id)
-        
-        if journey:
-            st.success(f"Found {len(journey)} visits in patient journey")
-            
-            st.subheader("Journey Timeline")
-            for i, visit in enumerate(journey, 1):
-                with st.expander(f"Visit {i} - ID: {visit['visit_id']}"):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.write(f"**Doctor:** {visit['doctor_id']}")
-                    with col2:
-                        st.write(f"**Department:** {visit['department']}")
-                    with col3:
-                        st.write(f"**Diagnosis:** {visit['diagnosis']}")
-                    
-                    if visit.get('referral_doctor'):
-                        st.info(f"Referred to Doctor: {visit['referral_doctor']}")
-            
-            st.subheader("Journey Summary")
-            departments = [v['department'] for v in journey]
-            st.write(f"**Departments Visited:** {', '.join(set(departments))}")
-            st.write(f"**Total Visits:** {len(journey)}")
-            
-            st.dataframe(journey, use_container_width=True)
-        else:
-            st.warning(f"No journey found for Patient {patient_id}")
+# -------------------- Search / Queries --------------------
+if menu_option == "Search / Queries":
+    st.header("🔍 Search / Query Operations")
+    search_option = st.selectbox("Select Query Type", [
+        "Find by Patient ID",
+        "Find by Visit ID",
+        "Find by Doctor ID",
+        "Find by Cost",
+        "Find by Cost Range"
+    ])
 
-# Doctor Network Page
-elif page == "Doctor Network":
-    st.header("👨‍⚕️ Doctor Referral Network")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        doctor_id = st.number_input("Enter Doctor ID", min_value=1, value=47, step=1)
-    
-    with col2:
-        depth = st.slider("Network Depth", min_value=1, max_value=3, value=1)
-    
-    if st.button("Analyze Network"):
-        network = query_engine.get_doctor_referral_network(doctor_id, depth)
-        
-        if network:
-            st.success(f"Doctor {doctor_id} has {len(network)} doctors in referral network (depth={depth})")
-            
-            st.subheader("Network Doctors")
-            network_list = sorted(list(network))
-            
-            cols = st.columns(5)
-            for i, doc_id in enumerate(network_list):
-                with cols[i % 5]:
-                    st.metric(f"Doctor {doc_id}", "")
-            
-            st.divider()
-            
-            st.subheader("Referral Details")
-            for doc_id in network_list:
-                referral_count = sum(1 for r in storage.records.values() 
-                                   if r['doctor_id'] == doctor_id and r.get('referral_doctor') == doc_id)
-                st.write(f"**Doctor {doc_id}:** {referral_count} referrals")
-        else:
-            st.info(f"Doctor {doctor_id} has no referrals in the network")
+    if search_option == "Find by Patient ID":
+        patient_id = st.number_input("Patient ID:", min_value=1, value=1)
+        if st.button("Search Patient"):
+            results = engine.find_by_patient(patient_id)
+            st.write(f"Found {len(results)} visits for Patient {patient_id}")
+            st.dataframe(results)
 
-# Cost Analysis Page
-elif page == "Cost Analysis":
-    st.header("💰 Cost Analysis")
-    
-    records = storage.records.values()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        avg_cost = sum(r['treatment_cost'] for r in records) / len(records)
-        st.metric("Average Cost", f"${avg_cost:,.2f}")
-    
-    with col2:
-        max_cost = max(r['treatment_cost'] for r in records)
-        st.metric("Maximum Cost", f"${max_cost:,.2f}")
-    
-    with col3:
-        min_cost = min(r['treatment_cost'] for r in records)
-        st.metric("Minimum Cost", f"${min_cost:,.2f}")
-    
-    st.divider()
-    
-    st.subheader("Cost Distribution by Department")
-    dept_costs = {}
-    dept_counts = {}
-    
-    for r in records:
-        dept = r['department']
-        if dept not in dept_costs:
-            dept_costs[dept] = 0
-            dept_counts[dept] = 0
-        dept_costs[dept] += r['treatment_cost']
-        dept_counts[dept] += 1
-    
-    dept_avg = {dept: dept_costs[dept] / dept_counts[dept] for dept in dept_costs}
-    
-    st.bar_chart(dept_avg)
-    
-    st.subheader("Department Statistics")
-    for dept in sorted(dept_costs.keys()):
-        with st.expander(f"{dept}"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Cost", f"${dept_costs[dept]:,.2f}")
-            with col2:
-                st.metric("Average Cost", f"${dept_avg[dept]:,.2f}")
-            with col3:
-                st.metric("Visit Count", f"{dept_counts[dept]:,}")
+    elif search_option == "Find by Visit ID":
+        visit_id = st.number_input("Visit ID:", min_value=1, value=1)
+        if st.button("Search Visit"):
+            results = engine.find_by_visit(visit_id)
+            st.write(f"Visit details for ID {visit_id}")
+            st.dataframe(results)
 
-# Referral Chain Page
-elif page == "Referral Chain":
-    st.header("🔗 Referral Chain Analysis")
-    
-    visit_id = st.number_input("Enter Visit ID", min_value=1, value=1, step=1)
-    
-    if st.button("Trace Referral Chain"):
-        chain = query_engine.get_referral_chain(visit_id)
-        
-        if chain:
-            st.success(f"Found referral chain with {len(chain)} visits")
-            
-            st.subheader("Chain Sequence")
-            for i, vid in enumerate(chain, 1):
-                record = storage.records[vid]
-                with st.expander(f"Step {i} - Visit {vid}"):
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.write(f"**Patient:** {record['patient_id']}")
-                    with col2:
-                        st.write(f"**Doctor:** {record['doctor_id']}")
-                    with col3:
-                        st.write(f"**Department:** {record['department']}")
-                    with col4:
-                        st.write(f"**Diagnosis:** {record['diagnosis']}")
-                    
-                    if record.get('referral_doctor'):
-                        st.info(f"Referred to: Doctor {record['referral_doctor']}")
-            
-            st.divider()
-            st.write("**Chain Path:**")
-            st.write(" → ".join([f"Visit {vid}" for vid in chain]))
-        else:
-            st.warning(f"No referral chain found for Visit {visit_id}")
+    elif search_option == "Find by Doctor ID":
+        doctor_id = st.number_input("Doctor ID:", min_value=1, value=1)
+        if st.button("Search Doctor"):
+            results = engine.find_by_doctor(doctor_id)
+            st.write(f"Found {len(results)} visits for Doctor {doctor_id}")
+            st.dataframe(results)
 
-# Record Management Page
-elif page == "Record Management":
-    st.header("📝 Record Management")
+    elif search_option == "Find by Cost":
+        cost = st.number_input("Exact Cost:", min_value=0.0, value=0.0)
+        if st.button("Search Cost"):
+            results = engine.find_by_cost(cost)
+            st.write(f"Found {len(results)} visits with cost {cost}")
+            st.dataframe(results)
+
+    elif search_option == "Find by Cost Range":
+        low = st.number_input("Min Cost:", min_value=0.0, value=0.0)
+        high = st.number_input("Max Cost:", min_value=0.0, value=1000.0)
+        if st.button("Search Cost Range"):
+            results = engine.find_by_cost_range(low, high)
+            st.write(f"Found {len(results)} visits with cost between {low} and {high}")
+            st.dataframe(results)
+
+# -------------------- Add / Modify / Delete --------------------
+elif menu_option == "Add / Modify / Delete":
+    st.header("✏️ Add / Modify / Delete Records")
+    action = st.selectbox("Action", ["Add", "Modify", "Delete"])
     
-    tab1, tab2, tab3 = st.tabs(["Add Record", "Modify Record", "Delete Record"])
-    
-    with tab1:
-        st.subheader("Add New Record")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            new_visit_id = st.number_input("Visit ID", min_value=1, value=len(storage.records)+1, step=1)
-            new_patient_id = st.number_input("Patient ID", min_value=1, value=1, step=1, key="add_patient")
-            new_doctor_id = st.number_input("Doctor ID", min_value=1, value=1, step=1, key="add_doctor")
-            new_department = st.selectbox("Department", ["Cardiology", "Neurology", "Pediatrics", "Oncology", "Orthopedics"])
-            new_diagnosis = st.text_input("Diagnosis", "Hypertension")
-        
-        with col2:
-            new_cost = st.number_input("Treatment Cost", min_value=0.0, value=1000.0, step=100.0)
-            new_visits = st.number_input("Number of Visits", min_value=1, value=1, step=1)
-            new_risk = st.slider("Risk Score", 0.0, 1.0, 0.5, 0.01)
-            new_referral = st.number_input("Referral Doctor (0 for none)", min_value=0, value=0, step=1)
-            new_outcome = st.number_input("Outcome Score", min_value=0.0, max_value=100.0, value=50.0, step=0.1)
+    if action == "Add":
+        st.subheader("Add Record")
+        new_record = {}
+        new_record["visit_id"] = st.number_input("Visit ID:", min_value=1, value=1)
+        new_record["patient_id"] = st.number_input("Patient ID:", min_value=1, value=1)
+        new_record["doctor_id"] = st.number_input("Doctor ID:", min_value=1, value=1)
+        new_record["department"] = st.text_input("Department:", value="General")
+        new_record["diagnosis"] = st.text_input("Diagnosis:", value="")
+        new_record["treatment_cost"] = st.number_input("Treatment Cost:", min_value=0.0, value=0.0)
+        new_record["number_of_visits"] = st.number_input("Number of Visits:", min_value=1, value=1)
+        new_record["risk_score"] = st.number_input("Risk Score:", min_value=0.0, max_value=1.0, value=0.0)
+        new_record["outcome_score"] = st.number_input("Outcome Score:", min_value=0.0, max_value=1.0, value=0.0)
+        new_record["referral_doctor"] = st.number_input("Referral Doctor ID (optional):", min_value=0, value=0)
         
         if st.button("Add Record"):
-            new_record = {
-                'visit_id': new_visit_id,
-                'patient_id': new_patient_id,
-                'doctor_id': new_doctor_id,
-                'department': new_department,
-                'diagnosis': new_diagnosis,
-                'treatment_cost': new_cost,
-                'number_of_visits': new_visits,
-                'risk_score': new_risk,
-                'referral_doctor': new_referral if new_referral > 0 else None,
-                'outcome_score': new_outcome
-            }
-            
-            result = index_manager.add_record(new_record)
-            if result:
-                st.success(f"Successfully added Visit {new_visit_id}")
-                st.json(result)
+            added = engine.add_record(new_record)
+            if added:
+                st.success(f"Visit {new_record['visit_id']} added!")
             else:
-                st.error("Failed to add record")
+                st.error("Failed to add record (duplicate visit_id?).")
     
-    with tab2:
-        st.subheader("Modify Existing Record")
-        
-        modify_visit_id = st.number_input("Visit ID to Modify", min_value=1, value=1, step=1)
-        
-        if modify_visit_id in storage.records:
-            record = storage.records[modify_visit_id]
-            
-            st.info("Current Record:")
-            st.json(record)
-            
-            field = st.selectbox("Field to Modify", 
-                               ["patient_id", "doctor_id", "department", "diagnosis", 
-                                "treatment_cost", "number_of_visits", "risk_score", 
-                                "referral_doctor", "outcome_score"])
-            
-            new_value = st.text_input(f"New value for {field}", str(record[field]))
-            
-            if st.button("Modify Record"):
-                result = index_manager.modify_record(modify_visit_id, field, new_value)
-                if result:
-                    st.success(f"Successfully modified Visit {modify_visit_id}")
-                    st.json(result)
-                else:
-                    st.error("Failed to modify record")
+    elif action == "Modify":
+        st.subheader("Modify Record")
+        vid_mod = st.number_input("Visit ID to Modify:", min_value=1, value=1)
+        field = st.selectbox("Field to Modify", [
+            "patient_id", "doctor_id", "department", "diagnosis",
+            "treatment_cost", "number_of_visits", "risk_score", "outcome_score", "referral_doctor"
+        ])
+        new_value = st.text_input("New Value:")
+        if st.button("Modify Record"):
+            # Convert types
+            if field in ["patient_id", "doctor_id", "number_of_visits", "referral_doctor"]:
+                new_value = int(new_value)
+            elif field in ["treatment_cost", "risk_score", "outcome_score"]:
+                new_value = float(new_value)
+            modified = engine.modify_record(vid_mod, field, new_value)
+            if modified:
+                st.success(f"Visit {vid_mod} updated!")
+                st.write(modified)
+            else:
+                st.error("Record not found.")
     
-    with tab3:
+    elif action == "Delete":
         st.subheader("Delete Record")
-        
-        delete_visit_id = st.number_input("Visit ID to Delete", min_value=1, value=1, step=1)
-        
-        if delete_visit_id in storage.records:
-            st.warning("Record to be deleted:")
-            st.json(storage.records[delete_visit_id])
-            
-            if st.button("Delete Record", type="primary"):
-                result = index_manager.delete_record(delete_visit_id)
-                if result:
-                    st.success(f"Successfully deleted Visit {delete_visit_id}")
-                else:
-                    st.error("Failed to delete record")
-        else:
-            st.info(f"Visit {delete_visit_id} not found")
+        vid_del = st.number_input("Visit ID to Delete:", min_value=1, value=1)
+        if st.button("Delete Record"):
+            deleted = engine.delete_record(vid_del)
+            if deleted:
+                st.success(f"Visit {vid_del} deleted!")
+            else:
+                st.error("Record not found or already deleted.")
 
-# Graph Analysis Page
-elif page == "Graph Analysis":
-    st.header("📈 Graph Analysis")
+# -------------------- Graph Analysis --------------------
+elif menu_option == "Graph Analysis":
+    st.header("🌐 Graph-Based Queries")
+    graph_option = st.selectbox("Choose Graph Query", [
+        "Patient Journey",
+        "Department Transitions",
+        "High Risk Patients",
+        "Circular Referrals",
+        "Longest Patient Journey",
+        "Graph Statistics"
+    ])
+
+    if graph_option == "Patient Journey":
+        patient_id = st.number_input("Patient ID:", min_value=1, value=1)
+        if st.button("Show Journey"):
+            journey = engine.patient_journey(patient_id)
+            st.dataframe(journey)
+
+    elif graph_option == "Department Transitions":
+        patient_id = st.number_input("Patient ID:", min_value=1, value=1)
+        if st.button("Show Transitions"):
+            transitions = engine.department_transitions(patient_id)
+            st.dataframe(transitions)
+
+    elif graph_option == "High Risk Patients":
+        threshold = st.number_input("Risk Threshold:", min_value=0.0, max_value=1.0, value=0.7)
+        if st.button("Show High Risk Patients"):
+            high_risk = engine.high_risk_patients(threshold)
+            st.json(high_risk)
+
+    elif graph_option == "Circular Referrals":
+        if st.button("Show Circular Referrals"):
+            circular = engine.circular_referrals()
+            st.json(circular)
+
+    elif graph_option == "Longest Patient Journey":
+        if st.button("Show Longest Journey"):
+            longest = engine.longest_patient_journey()
+            st.dataframe(longest['journey'])
+            st.write(f"Patient ID: {longest['patient_id']}, Visits: {longest['visit_count']}")
+
+    elif graph_option == "Graph Statistics":
+        if st.button("Show Graph Stats"):
+            stats = engine.graph_statistics()
+            st.json(stats)
+
+# -------------------- Traversals (BFS / DFS) --------------------
+elif menu_option == "Traversals (BFS / DFS)":
+    st.header("⚡ Traversals")
     
-    tab1, tab2, tab3 = st.tabs(["BFS Analysis", "DFS Analysis", "Path Finding"])
+    traversal = st.selectbox("Traversal Type", ["BFS from Visit", "DFS Discovery / Finish Times"])
     
-    with tab1:
-        st.subheader("Breadth-First Search (BFS)")
-        start_visit = st.number_input("Start Visit ID", min_value=1, value=1, step=1)
-        
+    if traversal == "BFS from Visit":
+        vid = st.number_input("Starting Visit ID:", min_value=1, value=1)
         if st.button("Run BFS"):
-            distances = graph_manager.graph.BFS(start_visit)
+            distances = engine.bfs_from_visit(vid)
             if distances:
-                st.success(f"BFS completed from Visit {start_visit}")
-                st.write(f"**Reachable Visits:** {len(distances)}")
-                
-                if len(distances) > 1:
-                    st.subheader("Distance Distribution")
-                    dist_counts = {}
-                    for d in distances.values():
-                        dist_counts[d] = dist_counts.get(d, 0) + 1
-                    st.bar_chart(dist_counts)
-                    
-                    st.subheader("Sample Distances")
-                    sample = dict(list(distances.items())[:20])
-                    st.json(sample)
+                df = pd.DataFrame(list(distances.items()), columns=["Visit ID", "Distance"])
+                df = df.sort_values("Distance")
+                st.dataframe(df)
             else:
-                st.warning(f"Visit {start_visit} not found in graph")
+                st.warning("Visit ID not found in graph.")
     
-    with tab2:
-        st.subheader("Depth-First Search (DFS)")
-        
+    elif traversal == "DFS Discovery / Finish Times":
         if st.button("Run DFS"):
-            times = graph_manager.graph.DFS()
-            st.success("DFS completed on entire graph")
-            st.write(f"**Vertices Analyzed:** {len(times)}")
-            
-            st.subheader("Sample Discovery/Finish Times")
-            sample = dict(list(times.items())[:20])
-            st.json(sample)
-    
-    with tab3:
-        st.subheader("Find Path Between Visits")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            path_start = st.number_input("Start Visit", min_value=1, value=1, step=1)
-        with col2:
-            path_end = st.number_input("End Visit", min_value=1, value=10, step=1)
-        
-        if st.button("Find Path"):
-            path = graph_manager.graph.find_path(path_start, path_end)
-            
-            if path:
-                st.success(f"Path found with {len(path)} visits")
-                st.write("**Path:**")
-                st.write(" → ".join([f"Visit {vid}" for vid in path]))
-                
-                st.subheader("Path Details")
-                for vid in path:
-                    if vid in storage.records:
-                        record = storage.records[vid]
-                        st.write(f"**Visit {vid}:** Patient {record['patient_id']}, "
-                               f"Doctor {record['doctor_id']}, "
-                               f"{record['department']} - {record['diagnosis']}")
+            times = engine.dfs_times()
+            if times:
+                df = pd.DataFrame([
+                    {"Visit ID": vid, "Discovery Time": t[0], "Finish Time": t[1]} 
+                    for vid, t in times.items()
+                ])
+                df = df.sort_values("Discovery Time")
+                st.dataframe(df)
             else:
-                st.warning(f"No path found between Visit {path_start} and Visit {path_end}")
-
-# Footer
-st.divider()
-st.markdown("""
-    <div style='text-align: center; color: gray; padding: 1rem;'>
-        Healthcare Data Management System | Built with Streamlit | 1M Records
-    </div>
-""", unsafe_allow_html=True)
+                st.warning("Graph is empty.")
