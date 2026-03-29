@@ -1,0 +1,54 @@
+import csv
+
+class DataStorage:
+    """
+    Records are stored as a dictionary of dictionaries with visit_id as key.
+    """
+
+    def __init__(self, path=None):
+        self.path = path
+        self.records = {}  #We keep dictionary of dictionaries
+
+    def load_data(self):
+        """Load CSV data into memory and convert fields to proper types."""
+        if not self.path:
+            raise ValueError("CSV path not provided.")
+        with open(self.path, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Type conversion
+                row["visit_id"] = int(row["visit_id"])
+                row["patient_id"] = int(row["patient_id"])
+                row["doctor_id"] = int(row["doctor_id"])
+                row["treatment_cost"] = float(row["treatment_cost"])
+                row["number_of_visits"] = int(row["number_of_visits"])
+                row["risk_score"] = float(row["risk_score"])
+                row["outcome_score"] = float(row["outcome_score"])
+
+                self.records[row["visit_id"]] = row
+        print("Loaded", len(self.records), "records.")
+
+    def get_all(self):
+        return self.records
+
+    def get(self, visit_id):
+        return self.records.get(visit_id, None)
+
+    def insert(self, record):
+        visit_id = record.get("visit_id")
+        if visit_id is None:
+            raise ValueError("Record must have a 'visit_id'.")
+        self.records[visit_id] = record
+        return True
+
+    def update(self, visit_id, updates):
+        if visit_id not in self.records:
+            raise KeyError(f"Record with visit_id {visit_id} not found.")
+        self.records[visit_id].update(updates)
+        return True
+
+    def delete(self, visit_id):
+        if visit_id in self.records:
+            del self.records[visit_id]
+            return True
+        raise KeyError(f"Record with visit_id {visit_id} not found.")
