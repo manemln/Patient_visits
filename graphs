@@ -1,5 +1,3 @@
-# ---------------- Vertex & Edge ----------------
-
 class Vertex:
     def __init__(self, visit_id, element=None):
         self.visit_id = visit_id
@@ -21,16 +19,12 @@ class Edge:
         return self.origin, self.destination
 
 
-# ---------------- Graph ----------------
-
 class Graph:
     def __init__(self, directed=True):
         self.directed = directed
-        self.vertices = {}        # visit_id -> Vertex
-        self.outgoing = {}        # Vertex -> {Vertex: Edge}
-        self.incoming = {}        # Vertex -> {Vertex: Edge}
-
-    # ---- Basic Operations ----
+        self.vertices = {}        # visit_id: Vertex
+        self.outgoing = {}        # Vertex: {Vertex: Edge}
+        self.incoming = {}        # Vertex: {Vertex: Edge}
 
     def insert_vertex(self, visit_id, element=None):
         if visit_id in self.vertices:
@@ -65,8 +59,6 @@ class Graph:
         if isinstance(v, int):
             v = self.vertices.get(v)
         return self.incoming.get(v, {})
-
-    # ---- Traversals ----
 
     def BFS(self, start_visit_id):
         for vertex in self.vertices.values():
@@ -125,7 +117,6 @@ class Graph:
 
         return times
 
-    # ---- Pathfinding ----
     def find_path(self, start_visit_id, end_visit_id):
         self.BFS(start_visit_id)
         end = self.vertices.get(end_visit_id)
@@ -138,8 +129,6 @@ class Graph:
             path.append(current.visit_id)
             current = current.predecessor
         return path[::-1]
-
-    # ---- Strongly Connected Components ----
 
     def transpose(self):
         gt = Graph(directed=self.directed)
@@ -156,8 +145,6 @@ class Graph:
             edges.extend(vertex_edges.values())
         return edges
 
-
-#generate data check whether or not works put in the slide
     def strongly_connected_components(self):
         times = self.DFS()
         gt = self.transpose()
@@ -195,30 +182,28 @@ class GraphManager:
         """Build graph with improved referral chain logic"""
         self.storage = storage
         
-        # Insert all vertices
         for visit_id, record in storage.items():
             self.graph.insert_vertex(visit_id, record)
 
-        # Build referral edges with temporal awareness
-        patient_visits = {}  # patient_id -> list of (visit_id, record)
+        patient_visits = {}  # patient_id - list of (visit_id, record)
         
-        # Group visits by patient
+        #Grouping visits by patient
         for visit_id, record in storage.items():
             patient_id = record['patient_id']
             if patient_id not in patient_visits:
                 patient_visits[patient_id] = []
             patient_visits[patient_id].append((visit_id, record))
         
-        # Sort each patient's visits by visit_id (proxy for time)
+        #Sorting each patient's visits by visit_id 
         for patient_id, visits in patient_visits.items():
-            visits.sort(key=lambda x: x[0])  # Sort by visit_id
+            visits.sort(key=lambda x: x[0])  # Sorting by visit_id
             
-            # Create edges between consecutive visits
+            #Creating edges between consecutive visits
             for i in range(len(visits) - 1):
                 curr_vid, curr_rec = visits[i]
                 next_vid, next_rec = visits[i + 1]
                 
-                # Edge from current visit to next visit
+                #Edge from current visit to next visit
                 self.graph.insert_edge(curr_vid, next_vid, {
                     "patient_id": patient_id,
                     "from_doctor": curr_rec['doctor_id'],
@@ -245,8 +230,42 @@ class GraphManager:
                 })
         return sorted(journey, key=lambda x: x['visit_id'])
 
+    def find_complete_referral_chain(self, visit_id):
+        """Find entire referral chain (both forward and backward)"""
+        if visit_id not in self.graph.vertices:
+            return []
+        
+        #Finding all visits in the chain: backward traversal
+        chain = []
+        visited = set()
+        current = self.graph.vertices[visit_id]
 
-#bzbzal
+        while current and current.visit_id not in visited:
+            chain.insert(0, {
+                'visit_id': current.visit_id,
+                'record': self.storage[current.visit_id]
+            })
+            visited.add(current.visit_id)
+            
+            incoming = self.graph.incoming_edges(current)
+            if not incoming:
+                break
+            current = next(iter(incoming.keys()))
+        
+
+        visited_forward = set(visited)
+        current = self.graph.vertices[visit_id]
+        
+        for next_vertex in self.graph.outgoing_edges(current):
+            if next_vertex.visit_id not in visited_forward:
+                chain.append({
+                    'visit_id': next_vertex.visit_id,
+                    'record': self.storage[next_vertex.visit_id]
+                })
+                visited_forward.add(next_vertex.visit_id)
+        
+        return chain
+
     def find_doctor_referral_network(self, doctor_id, depth=1):
         """Find doctors in referral network (both directions)"""
         network = {'refers_to': set(), 'referred_by': set()}
@@ -280,10 +299,8 @@ class GraphManager:
         return network
 
 
-
-#add in the UI
     def find_department_transitions(self, patient_id):
-        """Tracks how a patient moved between departments"""
+        """Track how a patient moved between departments"""
         journey = self.find_patient_journey(patient_id)
         transitions = []
         
@@ -302,12 +319,11 @@ class GraphManager:
         
         return transitions
 
-#add in the UI
     def find_high_risk_paths(self, risk_threshold=0.7):
         """Find patient journeys with consistently high risk scores"""
         high_risk_journeys = {}
         
-        # Group by patient
+        #Grouping by patient
         for vid, record in self.storage.items():
             patient_id = record['patient_id']
             if patient_id not in high_risk_journeys:
@@ -319,7 +335,7 @@ class GraphManager:
                 'diagnosis': record['diagnosis']
             })
         
-        # Filter patients with high average risk
+        #Filtering patients with high average risk
         result = {}
         for patient_id, visits in high_risk_journeys.items():
             avg_risk = sum(v['risk_score'] for v in visits) / len(visits)
@@ -332,12 +348,11 @@ class GraphManager:
         
         return result
 
-#check wuth artificial data
     def find_circular_referrals(self):
         """Detect circular referral patterns (cycles in the graph)"""
         sccs = self.graph.strongly_connected_components()
         
-        # Filter SCCs with more than 1 vertex (actual cycles)
+        #Filtering SCCs with more than 1 vertex
         circular_patterns = []
         for component in sccs:
             if len(component) > 1:
@@ -362,8 +377,6 @@ class GraphManager:
         
         return circular_patterns
 
-
-#add in the UI
     def find_longest_patient_journey(self):
         """Find the patient with the most visits"""
         patient_visit_counts = {}
@@ -382,7 +395,6 @@ class GraphManager:
             'journey': self.find_patient_journey(max_patient[0])
         }
 
-#add in the UI 
     def get_graph_statistics(self):
         """Get overall graph statistics"""
         total_vertices = len(self.graph.vertices)
