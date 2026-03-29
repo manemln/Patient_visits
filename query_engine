@@ -1,0 +1,94 @@
+class QueryEngine:
+    def __init__(self, storage, index_manager, graph_manager):
+        self.storage = storage
+        self.index = index_manager
+        self.graph = graph_manager
+
+    #Search Methods queries
+
+    def find_by_visit(self, visit_id):
+        record_ids = self.index.find_by_visit(visit_id)
+        return [self.index.storage[vid] for vid in record_ids]
+
+    def find_by_patient(self, patient_id):
+        record_ids = self.index.find_by_patient(patient_id)
+        return [self.index.storage[vid] for vid in record_ids]
+
+    def find_by_doctor(self, doctor_id):
+        record_ids = self.index.find_by_doctor(doctor_id)
+        return [self.index.storage[vid] for vid in record_ids]
+
+    def find_by_cost(self, cost):
+        record_ids = self.index.find_by_cost(cost)
+        return [self.index.storage[vid] for vid in record_ids]
+
+    def find_by_cost_range(self, low, high):
+        record_ids = self.index.find_by_cost_range(low, high)
+        return [self.index.storage[vid] for vid in record_ids]
+    
+    #Modification Methods
+
+    def add_record(self, record):
+        added = self.index.add_record(record)
+        if added:
+            self.storage[record["visit_id"]] = record
+        return added
+
+    def delete_record(self, visit_id):
+        deleted = self.index.delete_record(visit_id)
+        if deleted and visit_id in self.storage:
+            del self.storage[visit_id]
+        return deleted
+
+    def modify_record(self, visit_id, field, new_value):
+        modified = self.index.modify_record(visit_id, field, new_value)
+        if modified:
+            self.storage[visit_id][field] = new_value
+        return modified
+
+    #Analytics
+
+    def top_k_visits_by_cost(self, k=10):
+        records = list(self.storage.values())
+        return sorted(records, key=lambda x: x['treatment_cost'], reverse=True)[:k]
+
+    def min_max_avg_cost(self):
+        costs = [r['treatment_cost'] for r in self.storage.values()]
+        return {
+            "min": min(costs),
+            "max": max(costs),
+            "average": sum(costs) / len(costs)
+        }
+
+    #Graph Queries
+
+    def patient_journey(self, patient_id):
+        return self.graph.find_patient_journey(patient_id)
+
+    def referral_chain(self, visit_id):
+        return self.graph.find_complete_referral_chain(visit_id)
+
+    def doctor_referral_network(self, doctor_id, depth=1):
+        return self.graph.find_doctor_referral_network(doctor_id, depth)
+
+    def department_transitions(self, patient_id):
+        return self.graph.find_department_transitions(patient_id)
+
+    def high_risk_patients(self, threshold=0.7):
+        return self.graph.find_high_risk_paths(threshold)
+
+    def circular_referrals(self):
+        return self.graph.find_circular_referrals()
+
+    def longest_patient_journey(self):
+        return self.graph.find_longest_patient_journey()
+
+    def graph_statistics(self):
+        return self.graph.get_graph_statistics()
+
+
+    def bfs_from_visit(self, visit_id):
+        return self.graph.graph.BFS(visit_id)
+
+    def dfs_times(self):
+        return self.graph.graph.DFS()
